@@ -791,7 +791,7 @@ def _setup_camera(gl, cx, cy, fx, fy, w, h, near, far, view_matrix, k):
 
     f = 0.5 * (fx + fy)
     right = (w - (cx + pixel_center_offset)) * (1. / f)
-    left = -(cx + pixel_center_offset) * (1. / f)      
+    left = -(cx + pixel_center_offset) * (1. / f)
     top = -(h - (cy + pixel_center_offset)) * (1. / f)
     bottom = (cy + pixel_center_offset) * (1. / f)
     gl.Ortho(left, right, bottom, top, near, far) # before: gl.Frustum(left, right, bottom, top, near, far)
