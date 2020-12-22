@@ -1135,9 +1135,13 @@ def read_background_dict(bgDirSearch):
 def compute_split_range(dataNum, splitNum, splitIdx):
     """
     determine split range, for multi-process running
+    
+    Returns an array containing
+        -> [starting index, ending index]
     """
 
     splitLen = int(np.ceil(1.*dataNum/splitNum))
+    # min here is to prevent exceeding total data length
     splitRange = [splitIdx*splitLen, min((splitIdx+1)*splitLen, dataNum)]
 
     return splitRange
@@ -1167,6 +1171,7 @@ def loaded_config_consistency_check(dataPrefix,meshPath):
 
 def main(args):
     """
+    -> Each mesh is rendered with 4 background, 4 different angle viewpoint.
     total data number: N*M'*4 = 6795*4*4 = 108720
     dataset size (if use resolutionScale-4):  (4.1+9.4) (MB) * 108720. / 1024. / 1024.= 1.4 (T)
     estimated time (if with 30 processes in parallel): each process ~ 27+10 h(s)
@@ -1188,19 +1193,20 @@ def main(args):
     t_used = 0.
     for meshIdx in range(meshNum):
 
-        # split range check
-        if not (splitRange[0] <= meshIdx < splitRange[1]): continue
+        # split range check, skip if not belonging to current split
+        if not (splitRange[0] <= meshIdx < splitRange[1]):
+            continue
         t_start = time.time()
 
-        # select a subset of M' (maybe 4) background types
+        # randomly select a subset of M' (default is 4) background types
         selectedBgNamesIdx = np.random.choice(len(BACKGROUND_NAMES), args.eachMeshWithBgNum, replace=False)
 
-        # for each selected background type
+        # for each selected background type, randomly select 4 (default) images
         for nameIdx in range(args.eachMeshWithBgNum):
 
-            # randomly select an image from this background type
+            # randomly select an image from this background type using the index obtained above
             sceneName = BACKGROUND_NAMES[selectedBgNamesIdx[nameIdx]]
-            bgIdx = np.random.choice(len(backgroundDict[sceneName]), 1, replace=False)
+            bgIdx = np.random.choice(len(backgroundDict[sceneName]), 1, replace=False)[0]
 
             # call the render function, and save 4 views
             dataPrefix = int(meshIdx*args.eachMeshWithBgNum*NUM_VIEW_RENDERING + nameIdx*NUM_VIEW_RENDERING)
@@ -1208,7 +1214,7 @@ def main(args):
                 loadedConfig = loaded_config_consistency_check(dataPrefix=dataPrefix,meshPath=meshPaths[meshIdx])
                 render.render_colored_mesh_with_background_use_config(quickDemo=args.quickDemo,loadedConfig=loadedConfig,addionalType=args.addionalType)
             else:
-                render.render_colored_mesh_with_background(meshPath=meshPaths[meshIdx],bgImgPath=backgroundDict[sceneName][bgIdx[0]],quickDemo=args.quickDemo,dataPrefix=dataPrefix,eachMeshWithBgNum=args.eachMeshWithBgNum)
+                render.render_colored_mesh_with_background(meshPath=meshPaths[meshIdx],bgImgPath=backgroundDict[sceneName][bgIdx],quickDemo=args.quickDemo,dataPrefix=dataPrefix,eachMeshWithBgNum=args.eachMeshWithBgNum)
 
         # log
         t_used += (time.time() - t_start) # sec.
