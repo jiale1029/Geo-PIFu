@@ -118,9 +118,9 @@ class render_mesh(object):
 
         # for using the saved config file
         self.loadedConfig = None
-        self.addionalType = None
+        self.additionalType = None
 
-    def render_colored_mesh_with_background_use_config(self,quickDemo=False,loadedConfig=None,addionalType=None):
+    def render_colored_mesh_with_background_use_config(self,quickDemo=False,loadedConfig=None,additionalType=None):
 
         # init. args.
         self.meshPath = loadedConfig["meshPath"]
@@ -129,14 +129,14 @@ class render_mesh(object):
         self.dataPrefix = loadedConfig["dataPrefix"]
         self.eachMeshWithBgNum = loadedConfig["args"]["eachMeshWithBgNum"]
         self.loadedConfig = loadedConfig
-        self.addionalType = addionalType
-        if addionalType not in SUPPORTED_ADDITIONAL_TYPES:
-            print("addionalType: {} is not supported yet!".format(addionalType))
+        self.additionalType = additionalType
+        if additionalType not in SUPPORTED_ADDITIONAL_TYPES:
+            print("additionalType: {} is not supported yet!".format(additionalType))
             pdb.set_trace()
         self.newMeshToRead = True if (self.quickDemo or (self.dataPrefix%(self.eachMeshWithBgNum*NUM_VIEW_RENDERING) == 0)) else False
 
-        # rendering by addionalType
-        if addionalType == "smplSemVoxels":
+        # rendering by additionalType
+        if additionalType == "smplSemVoxels":
 
             # load mesh, apply rot, get {mean,scaling}
             # load smpl, apply rot, normalize it with {mean, scaling}
@@ -221,7 +221,7 @@ class render_mesh(object):
 
         #----- LEFT view rendering -----
         self.start_rendering(accuRotDegree=-90, info="LEFT", dataPrefix=dataPrefix, meshPath=meshPath)
-        
+
     def set_sky_lighting_directions(self):
 
         self.skyLightRotDegrees[0] = -np.random.randint(3., high=90+1) # left
@@ -444,7 +444,7 @@ class render_mesh(object):
         self.vertsNormal = self.inverseRotateY(points=self.vertsNormal,angle=accuRotDegree) # normal of the mesh
         self.vertsSmpl = self.inverseRotateY(points=self.vertsSmpl,angle=accuRotDegree) # vertex of the SMPL
         self.jointsFromSmplParams = self.inverseRotateY(points=self.jointsFromSmplParams,angle=accuRotDegree) # joints of the SMPL
-        
+
         # init. the render
         self.rn.set(v=self.verts, f=self.faces, vc=self.vertsColor, bgcolor=np.ones(3))
 
@@ -456,7 +456,7 @@ class render_mesh(object):
 
         # render {0,1} maskImage, 1-mask, 0-bg
         self.visMap, self.barycentricMap, self.maskImage = self.renderMask()
-        
+
         # render normalMap
         self.normalMap, self.normalRGB = self.renderNormal()
 
@@ -758,7 +758,7 @@ class render_mesh(object):
     def renderRGB(self):
 
         # (h,w,3), values in (0,1)
-        return self.rn.r 
+        return self.rn.r
 
     def inverseRotateY(self,points,angle):
         """
@@ -1091,7 +1091,7 @@ def parse_args():
     parser.add_argument('--saveDir', type=str, default="/trainman-mount/trainman-storage-d5c0a121-bb5d-4afb-8020-c53f096d2a5c/data/humanRender")
     
     parser.add_argument('--useConfig', action='store_true', help='If enabled, load the pre-saved config.json for each mesh')
-    parser.add_argument('--addionalType', type=str, default="smplSemVoxels", help="now supports: smplSemVoxels")
+    parser.add_argument('--additionalType', type=str, default="smplSemVoxels", help="now supports: smplSemVoxels")
 
     parser.add_argument('--splitNum', type=int, default="30", help="for multi-process running")
     parser.add_argument('--splitIdx', type=int, default="0", help="{0, ..., splitNum-1}")
@@ -1158,13 +1158,22 @@ def loaded_config_consistency_check(dataPrefix,meshPath):
     assert(loadedConfig["dataPrefix"] == dataPrefix)
 
     # meshPath
+    loadedConfig["meshPath"] = meshPath
     assert(loadedConfig["meshPath"] == meshPath)
 
     # args
     args_loaded = loadedConfig['args']
     args_run = vars(args)
     for eachKey in args_loaded.keys():
-        if eachKey in ["useConfig", "addionalType"]: continue
+        if eachKey in ["useConfig", "additionalType"]: continue
+        elif eachKey == "bgDirSearch":
+            loadedConfig['args'][eachKey] = args_run[eachKey]
+        elif eachKey == "saveDir":
+            loadedConfig['args'][eachKey] = args_run[eachKey]
+        elif eachKey == "meshDirSearch":
+            loadedConfig['args'][eachKey] = args_run[eachKey]
+        elif eachKey == "bgImgPath":
+            loadedConfig['args'][eachKey] = args_run[eachKey]
         assert(args_loaded[eachKey] == args_run[eachKey])
 
     return loadedConfig
@@ -1189,6 +1198,7 @@ def main(args):
     # determine split range, for multi-process running
     splitRange = compute_split_range(dataNum=meshNum,splitNum=args.splitNum,splitIdx=args.splitIdx)
 
+    print(len(meshPaths))
     # for each mesh
     t_used = 0.
     for meshIdx in range(meshNum):
@@ -1212,7 +1222,7 @@ def main(args):
             dataPrefix = int(meshIdx*args.eachMeshWithBgNum*NUM_VIEW_RENDERING + nameIdx*NUM_VIEW_RENDERING)
             if args.useConfig:
                 loadedConfig = loaded_config_consistency_check(dataPrefix=dataPrefix,meshPath=meshPaths[meshIdx])
-                render.render_colored_mesh_with_background_use_config(quickDemo=args.quickDemo,loadedConfig=loadedConfig,addionalType=args.addionalType)
+                render.render_colored_mesh_with_background_use_config(quickDemo=args.quickDemo,loadedConfig=loadedConfig,additionalType=args.additionalType)
             else:
                 render.render_colored_mesh_with_background(meshPath=meshPaths[meshIdx],bgImgPath=backgroundDict[sceneName][bgIdx],quickDemo=args.quickDemo,dataPrefix=dataPrefix,eachMeshWithBgNum=args.eachMeshWithBgNum)
 
@@ -1229,8 +1239,8 @@ def quick_rendering_demo(args):
     render = render_mesh(w=args.w*args.resolutionScale,h=args.h*args.resolutionScale,f=args.f*args.resolutionScale,near=args.near,far=args.far)
 
     # set mesh and background image paths
-    meshPath = "./examplesRendering/mesh.obj" # results_gyx_20181011_zyq_1_F/10198/mesh.obj
-    bgImgPath = "./examplesRendering/background.jpg" # from internet
+    meshPath = "/mnt/tanjiale/geopifu_dataset/deephuman_dataset/DeepHumanDataset/dataset/results_gyx_20181011_zyq_1_F/10198/mesh.obj" # results_gyx_20181011_zyq_1_F/10198/mesh.obj
+    bgImgPath = "/mnt/tanjiale/geopifu_dataset/lsun/LSUN/train_jpg/bedroom/b\'013e887ba40a26137a2d58c30b740d8b550cb841\'.jpg" # from internet
 
     # start rendering
     assert( args.quickDemo==True )
