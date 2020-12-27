@@ -28,7 +28,8 @@ def main(args):
         elif args.query:
             cmd = (
                 "python -m apps.prepare_shape_query --sampleType occu_sigma3.5_pts5k " +
-                "--datasetDir %shumanRender --epoch_range 0 15" %(DATA_FOLDER) +
+                "--shapeQueryDir /mnt/tanjiale/geopifu_dataset/shape_query " +
+                "--datasetDir %shumanRender_no_config --epoch_range 0 15 " %(DATA_FOLDER) +
                 "--sigma 3.5 --num_sample_inout 5000 --num_sample_color 0 --splitNum 32 --splitIdx %s" %(i)
             )
         cmds.append(cmd)
