@@ -84,7 +84,7 @@ def compute_split_range(testing_inds, args):
         # check existance
         configPath = "%s/config/%06d.json" % (args.datasetDir, eachTestIdx)
         assert(os.path.exists(configPath)) # config file
-        
+
         # save idx
         testIdxList.append([configPath])
 
@@ -158,17 +158,17 @@ def main(args):
     """
 
     # init.
-    visualCheck_0 = False
+    visualCheck_0 = args.visual_check
 
     # create dirs for saving query pts
     # saveQueryDir = "%s/%s" % (args.datasetDir, args.sampleType)
-    saveQueryDir = "./%s_split%02d_%02d" % (args.sampleType, args.splitNum, args.splitIdx)
+    saveQueryDir = "%s/%s_split%02d_%02d" % (args.shapeQueryDir, args.sampleType, args.splitNum, args.splitIdx)
     if not os.path.exists(saveQueryDir): os.makedirs(saveQueryDir)
 
     # get training/test data indices
     training_inds, testing_inds = get_training_test_indices(args=args,shuffle=False)
     trainIdxList = compute_split_range(testing_inds=training_inds,args=args)
-    
+
     # start query pts sampling
     frameIdx = [0, 0, 0]
     frameIdx[0] = int( trainIdxList[0][0].split("/")[-1].split(".")[0])
@@ -265,19 +265,21 @@ def main(args):
 
             print("visualCheck_0: see if query samples are inside the volume...")
 
+            os.makedirs(f"{args.shapeQueryDir}/sample_images", exist_ok=True)
+
             # inside pts, red
             samples = np.concatenate([inside_points], 0).T # (3, n_in)
             labels  = np.concatenate([np.ones((1, inside_points.shape[0]))], 1) # (1, n_in)
-            save_samples_truncted_prob("./sample_images/%06d_shape_samples_inside.ply"%(frameIdx[1]), samples.T, labels.T)
+            save_samples_truncted_prob(f"{args.shapeQueryDir}/sample_images/%06d_shape_samples_inside.ply"%(frameIdx[1]), samples.T, labels.T)
 
             # outside pts, green
             samples = np.concatenate([outside_points], 0).T # (3, n_in)
             labels  = np.concatenate([np.zeros((1, outside_points.shape[0]))], 1) # (1, n_in)
-            save_samples_truncted_prob("./sample_images/%06d_shape_samples_outside.ply"%(frameIdx[1]), samples.T, labels.T)
+            save_samples_truncted_prob(f"{args.shapeQueryDir}/sample_images/%06d_shape_samples_outside.ply"%(frameIdx[1]), samples.T, labels.T)
 
             # normalized gt mesh
             gtMesh = {"v": mesh.vertices, "vn": mesh.vertex_normals, "vc": mesh.visual.vertex_colors, "f": mesh.faces, "fn": mesh.face_normals}
-            ObjIO.save_obj_data_color(gtMesh, "./sample_images/%06d_meshGT.obj" % (frameIdx[1]))
+            ObjIO.save_obj_data_color(gtMesh, f"{args.shapeQueryDir}/sample_images/%06d_meshGT.obj" % (frameIdx[1]))
 
             pdb.set_trace()
 

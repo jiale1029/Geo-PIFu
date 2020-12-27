@@ -13,6 +13,8 @@ class BaseOptions():
         g_ours.add_argument('--meshDirSearch', type=str, default="/trainman-mount/trainman-storage-d5c0a121-bb5d-4afb-8020-c53f096d2a5c/data")
         g_ours.add_argument('--trainingDataRatio', type=float, default="0.8")
         g_ours.add_argument('--datasetDir', type=str, default="/trainman-mount/trainman-storage-d5c0a121-bb5d-4afb-8020-c53f096d2a5c/data/humanRender")
+        g_ours.add_argument('--shapeQueryDir', type=str, default="/mnt/tanjiale/shape_query")
+        g_ours.add_argument('--visual_check', action='store_true', help="Visual check of the sampled in and out points")
         g_ours.add_argument('--totalNumFrame', type=int, default="108720", help="total data number: N*M'*4 = 6795*4*4 = 108720")
         g_ours.add_argument('--online_sampling', action='store_true', help='online query point sampling, or offline')
         g_ours.add_argument('--resolution_x', type=int, default=171, help='# of grid in mesh reconstruction')
