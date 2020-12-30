@@ -925,11 +925,11 @@ class TrainDatasetICCV(Dataset):
 
                 # image RGB
                 img = np.uint8((np.transpose(res['img'][0].numpy(), (1, 2, 0)) * 0.5 + 0.5)[:, :, ::-1] * 255.0) # HWC, BGR, float 0 ~ 255, de-normalized by mean 0.5 and std 0.5
-                cv2.imwrite("./sample_images/%06d_img.png"%(index), img)
+                cv2.imwrite(f"{self.opt.shapeQueryDir}/sample_images/%06d_img.png"%(index), img)
 
                 # mask
                 mask = np.uint8(res['mask'][0,0].numpy() * 255.0) # (512, 512), 255 inside, 0 outside
-                cv2.imwrite("./sample_images/%06d_mask.png"%(index), mask)
+                cv2.imwrite(f"{self.opt.shapeQueryDir}/sample_images/%06d_mask.png"%(index), mask)
 
                 # orthographic projection
                 rot   = res['calib'][0,:3, :3]  # R_norm(-1,1)Cam_model, assuming that ortho. proj.: cam_f==256, c_x==c_y==256, img.shape==(512,512,3)
@@ -938,12 +938,13 @@ class TrainDatasetICCV(Dataset):
                 pts = 0.5 * (pts.numpy().T + 1.0) * 512 # (2500,3), ortho. proj.: cam_f==256, c_x==c_y==256, img.shape==(512,512,3)
                 imgProj = cv2.UMat(img)
                 for p in pts: cv2.circle(imgProj, (p[0], p[1]), 2, (0,255,0), -1)
-                cv2.imwrite("./sample_images/%06d_img_ptsProj.png"%(index), imgProj.get())     
+                cv2.imwrite(f"{self.opt.shapeQueryDir}/sample_images/%06d_img_ptsProj.png"%(index), imgProj.get())     
 
                 # save points in 3d
                 samples_roted = torch.addmm(trans, rot, res['samples']) # (3, N)
                 samples_roted[2,:] *= -1
-                save_samples_truncted_prob("./sample_images/%06d_samples.ply"%(index), samples_roted.T, res["labels"].T)
+                save_samples_truncted_prob(f"{self.opt.shapeQueryDir}/sample_images/%06d_samples.ply"%(index), samples_roted.T, res["labels"].T)
+
 
         # ----- load "color_samples", "rgbs" -----
 
@@ -978,12 +979,12 @@ class TrainDatasetICCV(Dataset):
 
                     # img
                     img = np.uint8((np.transpose(res['img'][0].numpy(), (1, 2, 0)) * 0.5 + 0.5)[:, :, ::-1] * 255.0) # HWC, BGR, float 0 ~ 255, de-normalized by mean 0.5 and std 0.5
-                    cv2.imwrite("./sample_images/%06d_img_input.png"%(index), img)
+                    cv2.imwrite(f"f{self.opt.shapeQueryDir}/sample_images/%06d_img_input.png"%(index), img)
 
                     # mesh voxels
                     meshVoxels_check = res["meshVoxels"][0].numpy() # DHW
                     meshVoxels_check = np.transpose(meshVoxels_check, (2,1,0)) # WHD, XYZ
-                    save_volume(meshVoxels_check, fname="./sample_images/%06d_meshVoxels_input.obj"%(index), dim_h=consts.dim_h, dim_w=consts.dim_w, voxel_size=consts.voxel_size)
+                    save_volume(meshVoxels_check, fname=f"{self.opt.shapeQueryDir}/sample_images/%06d_meshVoxels_input.obj"%(index), dim_h=consts.dim_h, dim_w=consts.dim_w, voxel_size=consts.voxel_size)
 
                 # ----- target view, a random view from {front, right, back, left} -----
                 if self.opt.use_view_pred_loss:
@@ -993,12 +994,12 @@ class TrainDatasetICCV(Dataset):
 
                     # target img
                     img = np.uint8((np.transpose(res['target_view'].numpy(), (1, 2, 0)) * 0.5 + 0.5)[:, :, ::-1] * 255.0) # HWC, BGR, float 0 ~ 255, de-normalized by mean 0.5 and std 0.5
-                    cv2.imwrite("./sample_images/%06d_img_target_%s.png"%(index,target_view_name), img)
+                    cv2.imwrite(f"{self.opt.shapeQueryDir}/sample_images/%06d_img_target_%s.png"%(index,target_view_name), img)
 
                     # target mesh voxels (this is to verify voxel transformation functions)
                     meshVoxels_target = self.transform_voxels_to_target(voxels_CDHW=res["meshVoxels"], target_view_idx=res["view_directions"])
                     meshVoxels_target = np.transpose(meshVoxels_target[0].numpy(), (2,1,0)) # WHD, XYZ
-                    save_volume(meshVoxels_target, fname="./sample_images/%06d_meshVoxels_target_%s.obj"%(index,target_view_name), dim_h=consts.dim_h, dim_w=consts.dim_w, voxel_size=consts.voxel_size)
+                    save_volume(meshVoxels_target, fname=f"{self.opt.shapeQueryDir}/sample_images/%06d_meshVoxels_target_%s.obj"%(index,target_view_name), dim_h=consts.dim_h, dim_w=consts.dim_w, voxel_size=consts.voxel_size)
 
                 pdb.set_trace()
 
@@ -1470,8 +1471,8 @@ class TrainDataset(Dataset):
             pts = 0.5 * (pts.numpy().T + 1.0) * 512 # (2500,3), ortho. proj.: cam_f==256, c_x==c_y==256, img.shape==(512,512,3)
             imgProj = cv2.UMat(img)
             for p in pts: cv2.circle(imgProj, (p[0], p[1]), 2, (0,255,0), -1)
-            cv2.imwrite("./sample_images/%06d_img.png"%(index), img)
-            cv2.imwrite("./sample_images/%06d_img_ptsProj.png"%(index), imgProj.get())            
+            cv2.imwrite(f"{self.opt.shapeQueryDir}/sample_images/%06d_img.png"%(index), img)
+            cv2.imwrite(f"{self.opt.shapeQueryDir}/sample_images/%06d_img_ptsProj.png"%(index), imgProj.get())            
 
         # ----- load "color_samples", "rgbs" -----
 
