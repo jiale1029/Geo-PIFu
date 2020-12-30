@@ -195,21 +195,21 @@ class TrainDatasetICCV(Dataset):
 
         if args.mini_dataset:
             print("Using a mini dataset for sanity check purpose for fast convergence...")
-            # using less than 1% of dataset for sanity check
-            totalNumFrameTrue = int(len(glob.glob(args.datasetDir+"/config/*.json")) / 106.1) # 1024 configs
-            assert(totalNumFrameTrue == 1024)
+            # using 0.5% of dataset for sanity check
+            totalNumFrameTrue = int(len(glob.glob(args.datasetDir+"/config/*.json")) / 106.1)//2 # 512 configs
+            assert(totalNumFrameTrue == 512)
 
-            max_idx = 1024
+            max_idx = 512
             indices = np.asarray(range(max_idx))
             assert(len(indices)%4 == 0)
 
-            testing_flag = (indices >= 0.75*max_idx) # 0.75 * 1024 = 768 (train) + 256 (test)
-            testing_inds = indices[testing_flag] # testing indices extracted using flag 256 testing indices: array of [768, 1023]
+            testing_flag = (indices >= 0.75*max_idx) # 0.75 * 512 = 384 (train) + 192 (test)
+            testing_inds = indices[testing_flag] # testing indices extracted using flag 192 testing indices: array of [384, ..., 511]
             testing_inds = testing_inds.tolist()
             if shuffle: np.random.shuffle(testing_inds)
             assert(len(testing_inds) % 4 == 0)
 
-            training_inds = indices[np.logical_not(testing_flag)] # 768 training indices: array of [0, ..., 767]
+            training_inds = indices[np.logical_not(testing_flag)] # 384 training indices: array of [0, ..., 383]
             training_inds = training_inds.tolist()
             if shuffle: np.random.shuffle(training_inds)
             assert(len(training_inds) % 4 == 0)
