@@ -12,6 +12,7 @@ class BaseOptions():
         g_ours = parser.add_argument_group('DeepHuman')
         g_ours.add_argument('--meshDirSearch', type=str, default="/trainman-mount/trainman-storage-d5c0a121-bb5d-4afb-8020-c53f096d2a5c/data")
         g_ours.add_argument('--trainingDataRatio', type=float, default="0.8")
+        g_ours.add_argument('--mini_dataset', action="store_true", help="Use a mini dataset for sanity check ")
         g_ours.add_argument('--datasetDir', type=str, default="/trainman-mount/trainman-storage-d5c0a121-bb5d-4afb-8020-c53f096d2a5c/data/humanRender")
         g_ours.add_argument('--shapeQueryDir', type=str, default="/mnt/tanjiale/shape_query")
         g_ours.add_argument('--visual_check', action='store_true', help="Visual check of the sampled in and out points")
