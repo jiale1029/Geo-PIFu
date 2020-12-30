@@ -144,6 +144,9 @@ class HGPIFuNet(BasePIFuNet):
         self.intermediate_preds_list = [] # default length is 4, opt.num_stack
         if self.opt.deepVoxels_fusion == "multiLoss":
         
+            # pixel aligned implicit function is here
+            # we concat the image features + depth
+            # we loop through the image features and the feature at that specific pixel
             for im_feat in self.im_feat_list:
 
                 # 2d features: [(B * num_views, opt.hourglass_dim, n_in+n_out), (B * num_view, 1, n_in+n_out)]
@@ -159,6 +162,7 @@ class HGPIFuNet(BasePIFuNet):
                     features_3D = self.index_3d(feat=deepVoxels.transpose(0,1), XYZ=torch.cat([xy, -1. * z], dim=1))
         
                 # predict sdf
+                # multiplication of in_img is due to extracting visible parts of the image
                 pred_sdf_list = self.surface_classifier(feature_2d=point_local_feat, feature_3d=features_3D)
                 for pred in pred_sdf_list:
                     pred_visible = in_img[:,None].float() * pred

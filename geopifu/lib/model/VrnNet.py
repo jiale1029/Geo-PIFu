@@ -448,10 +448,12 @@ class VrnNet(nn.Module):
         if self.opt.use_view_pred_loss: return_dict["render_rgb"], return_dict["pseudo_inverseDepth"] = self.get_renderings()
 
         # compute occupancy errors
+        # "error" -> hour_glass error
         error = self.get_error(labels=labels) # R, the mean loss value over all latent feature maps of the stack-hour-glass network
         return_dict.update(error)
 
         # compute view generation errors
+        # "error_view_render" -> render_error
         if self.opt.use_view_pred_loss: return_dict["error_view_render"] = self.get_error_view_render(target_views=target_views)
 
         # return: estimated mesh voxels, error, (and render_rgb, pseudo_inverseDepth, error_view_render), (and error_3d_gan_generator, error_3d_gan_discriminator_fake, error_3d_gan_discriminator_real)
