@@ -10,8 +10,8 @@ def work(cmd):
 
 def main(args):
     cmds = []
-    for i in range(30):
-        if args.render:
+    if args.render:
+        for i in range(30):
             if args.config:
                 cmd = (
                     "python render_mesh.py --meshDirSearch %sdeephuman_dataset --bgDirSearch " %(DATA_FOLDER) +
@@ -25,14 +25,16 @@ def main(args):
                     "%slsun --saveDir %shumanRender_no_config " %(DATA_FOLDER, DATA_FOLDER) +
                     "--resolutionScale 4 --splitNum 30 --splitIdx %s" %(i)
                 )
-        elif args.query:
+            cmds.append(cmd)
+    elif args.query:
+        for i in range(32):
             cmd = (
                 "python -m apps.prepare_shape_query --sampleType occu_sigma3.5_pts5k " +
                 "--shapeQueryDir /mnt/tanjiale/geopifu_dataset/shape_query " +
                 "--datasetDir %shumanRender_no_config --epoch_range 0 15 " %(DATA_FOLDER) +
                 "--sigma 3.5 --num_sample_inout 5000 --num_sample_color 0 --splitNum 32 --splitIdx %s" %(i)
             )
-        cmds.append(cmd)
+            cmds.append(cmd)
     cpu_count = multiprocessing.cpu_count()
     pool = multiprocessing.Pool(processes=cpu_count)
     print(pool.map(work, cmds))

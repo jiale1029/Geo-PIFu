@@ -54,7 +54,7 @@ def train(opt):
     visualCheck_0=False
 
     # set GPU idx
-    os.environ["CUDA_VISIBLE_DEVICES"] = opt.gpu_ids if len(opt.gpu_ids) > 1 else opt.gpu_id
+    os.environ["CUDA_VISIBLE_DEVICES"] = str(opt.gpu_ids) if len(opt.gpu_ids) > 1 else str(opt.gpu_id)
     cuda = torch.device('cuda')
     if len(opt.gpu_ids) > 1: assert(torch.cuda.device_count() > 1)
 
@@ -163,6 +163,7 @@ def train(opt):
             if visualCheck_0:
 
                 print("visualCheck_0: verify that img input is rgb, and mesh voxels are aligned with the image...")
+                os.makedirs(f"{opt.shapeQueryDir}/sample_images", exist_ok=True)
 
                 for bIdx in range(image_tensor.shape[0]):
                     print("{}/{}...".format(bIdx, image_tensor.shape[0]))
@@ -170,13 +171,13 @@ def train(opt):
                     # RGB img
                     img_BGR = ((np.transpose(image_tensor[bIdx,0].detach().cpu().numpy(), (1, 2, 0)) * 0.5 + 0.5)*255.).astype(np.uint8)[:,:,::-1] # RGB to BGR, (512,512,3), [0, 255]
                     img_RGB = img_BGR[:,:,::-1]
-                    cv2.imwrite("./sample_images/%s_%03d_img_input_by_cv2.png"%(opt.name,bIdx), img_BGR)          # cv2 save BGR-array into proper-color.png
-                    Image.fromarray(img_RGB).save("./sample_images/%s_%03d_img_input_by_PIL.png"%(opt.name,bIdx)) # PIL save RGB-array into proper-color.png
+                    cv2.imwrite(f"{opt.shapeQueryDir}/sample_images/%s_%03d_img_input_by_cv2.png"%(opt.name,bIdx), img_BGR)          # cv2 save BGR-array into proper-color.png
+                    Image.fromarray(img_RGB).save(f"{opt.shapeQueryDir}/sample_images/%s_%03d_img_input_by_PIL.png"%(opt.name,bIdx)) # PIL save RGB-array into proper-color.png
 
                     # mesh voxels
                     meshVoxels_check = meshVoxels_tensor[bIdx,0].detach().cpu().numpy() # DHW
                     meshVoxels_check = np.transpose(meshVoxels_check, (2,1,0)) # WHD, XYZ
-                    save_volume(meshVoxels_check, fname="./sample_images/%s_%03d_meshVoxels.obj"%(opt.name,bIdx), dim_h=consts.dim_h, dim_w=consts.dim_w, voxel_size=consts.voxel_size)
+                    save_volume(meshVoxels_check, fname=f"{opt.shapeQueryDir}/sample_images/%s_%03d_meshVoxels.obj"%(opt.name,bIdx), dim_h=consts.dim_h, dim_w=consts.dim_w, voxel_size=consts.voxel_size)
 
                 pdb.set_trace()
 
