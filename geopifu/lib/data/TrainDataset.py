@@ -9,6 +9,7 @@ import torch
 from PIL.ImageFilter import GaussianBlur
 import trimesh
 import logging
+from DataUtil.ObjIO import *
 
 import pdb # pdb.set_trace()
 import glob
@@ -139,7 +140,7 @@ class TrainDatasetICCV(Dataset):
 
         self.yaw_list = list(range(0,360,1))
         self.pitch_list = [0]
-        self.subjects = self.get_subjects() # a list of mesh paths for training or test
+        # self.subjects = self.get_subjects() # a list of mesh paths for training or test
 
         # PIL to tensor
         self.to_tensor = transforms.Compose([
@@ -710,6 +711,45 @@ class TrainDatasetICCV(Dataset):
                 'labels' : labels   # (1, n_in + n_out), 1.0-inside, 0.0-outside
                }
 
+    def get_color_sampling_new(self, dataConfig):
+        """
+            color_data
+                "color_samples" : (3, num_sample_color), float XYZ coords are inside the 3d-volume of [self.B_MIN, self.B_MAX]
+                "rgbs"          : (3, num_sample_color), -1 ~ 1 float
+        """
+        meshPathTmp = dataConfig["meshPath"]
+        # print(meshPathTmp)
+        assert(os.path.exists(meshPathTmp))
+
+        # gt_mesh_path = "/mnt/tanjiale/geopifu_dataset/deephuman_dataset/DeepHumanDataset/dataset/results_gyc_20181010_hsc_1_M/11248/mesh.obj"
+        mesh = load_obj_data(meshPathTmp)
+
+        randomRot           = np.array(dataConfig["randomRot"], np.float32) # by random R
+        mesh['vn'] = np.dot(mesh['vn'], np.transpose(randomRot))
+        # mesh.face_normals   = np.dot(mesh.face_normals , np.transpose(randomRot))
+        mesh['v'], _, _ = self.voxelization_normalization(np.dot(mesh['v'],np.transpose(randomRot)))
+
+        surface_points = mesh['v']
+        surface_colors = mesh['vc']
+        surface_normal = mesh['vn']
+        
+        if self.num_sample_color:
+            sample_list = random.sample(range(0, surface_points.shape[0] - 1), self.num_sample_color)
+            surface_colors = surface_colors[sample_list].T # (3, num_sample_color), 0 ~ 1 float
+            surface_normal = surface_normal[sample_list].T # (3, num_sample_color), -1 ~ 1 float
+            surface_points = surface_points[sample_list].T # (3, num_sample_color), XYZ coords
+
+        normal  = torch.Tensor(surface_normal).float()
+        samples = torch.Tensor(surface_points).float() + torch.normal(mean=torch.zeros((1, normal.size(1))), std=self.opt.sigma).expand_as(normal) * normal # (3, num_sample_color), XYZ coords
+
+        # Normalized to [-1, 1]
+        rgbs_color = 2.0 * torch.Tensor(surface_colors).float() - 1.0
+
+        return {'color_samples': samples, # (3, num_sample_color), XYZ coords
+                'rgbs': rgbs_color        # (3, num_sample_color), -1 ~ 1 float
+               }        
+        
+
     def get_color_sampling(self, subject, yid, pid=0):
         
         yaw = self.yaw_list[yid]
@@ -977,7 +1017,9 @@ class TrainDatasetICCV(Dataset):
                 "color_samples" : (3, num_sample_color), float XYZ coords are inside the 3d-volume of [self.B_MIN, self.B_MAX]
                 "rgbs"          : (3, num_sample_color), -1 ~ 1 float
             """
-            color_data = self.get_color_sampling(subject, yid=yid, pid=pid)
+            # color_data = self.get_color_sampling(subject, yid=yid, pid=pid)
+            color_data = self.get_color_sampling_new(dataConfig)
+            
             res.update(color_data)
 
         # ----- load "meshVoxels" -----

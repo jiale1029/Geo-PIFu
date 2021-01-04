@@ -191,6 +191,7 @@ def gen_mesh_iccv(opt, net, cuda, data, save_path, use_octree=True):
 
         # verts: (N, 3) in the mesh-coords, the same coord as data["samples"], N << 256*256*256
         # faces: (N, 3)
+        print("Reconstructing mesh...")
         verts, faces, _, _ = reconstruction_iccv(net, cuda, calib_tensor, opt.resolution_x, opt.resolution_y, opt.resolution_z, b_min, b_max, use_octree=use_octree, deepVoxels=deepVoxels_tensor)
         verts_tensor = torch.from_numpy(verts.T).unsqueeze(0).to(device=cuda).float() # (1, N, 3)
         xyz_tensor = net.projection(verts_tensor, calib_tensor[:1]) # （1, 3, N） Tensor of xyz coordinates in the image plane of (-1,1) zone and of the-first-view
@@ -249,6 +250,8 @@ def gen_mesh_color_iccv(opt, netG, netC, cuda, data, save_path, use_octree=True)
 
     image_tensor = data['img'].to(device=cuda)   # (num_views, 3, 512, 512)
     calib_tensor = data['calib'].to(device=cuda) # (num_views, 4, 4)
+    deepVoxels_tensor = torch.zeros([1], dtype=torch.int32).to(device=cuda) # small dummy tensors
+    if opt.deepVoxels_fusion != None: deepVoxels_tensor = data["deepVoxels"].to(device=cuda)[None,:] # (B=1,C=8,D=32,H=48,W=32), np.float32, all >= 0.
 
     # use hour-glass networks to extract image features
     netG.filter(image_tensor)
@@ -275,7 +278,8 @@ def gen_mesh_color_iccv(opt, netG, netC, cuda, data, save_path, use_octree=True)
 
         # verts: (N, 3) in the mesh-coords, the same coord as data["samples"], N << 256*256*256
         # faces: (N, 3)
-        verts, faces, _, _ = reconstruction_iccv(netG, cuda, calib_tensor, opt.resolution_x, opt.resolution_y, opt.resolution_z, b_min, b_max, use_octree=use_octree)
+        print("Reconstructing mesh...")
+        verts, faces, _, _ = reconstruction_iccv(netG, cuda, calib_tensor, opt.resolution_x, opt.resolution_y, opt.resolution_z, b_min, b_max, use_octree=use_octree, deepVoxels=deepVoxels_tensor)
         
         # Now Getting colors
         verts_tensor = torch.from_numpy(verts.T).unsqueeze(0).to(device=cuda).float() # (1,         3, N)
