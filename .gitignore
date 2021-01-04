@@ -1,2 +1,9 @@
-**/*.pyc
-**/**/.pyc
+**/**/*.pyc
+**/**/*.jpg
+**/**/*.png
+**/**/*.npy
+**/**/*.obj
+**/**/*.ply
+geopifu/checkpoints/*
+geopifu/results/*
+voxelizer/*
