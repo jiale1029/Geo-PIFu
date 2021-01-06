@@ -37,18 +37,18 @@ def main(args):
             cmds.append(cmd)
     elif args.prepare_voxel:
         DATASET_DIR = "/mnt/tanjiale/geopifu_dataset/humanRender_no_config"
+        RESULT_DIR = "/mnt/tanjiale/geopifu_dataset/geopifu_results"
         MESH_DIR = "/mnt/tanjiale/geopifu_dataset/deephuman_dataset"
         NAME = args.name
 
-        for i in range(12):
-            cmd = (
-                "python -m apps.test_shape_coarse --datasetDir %s " %(DATASET_DIR)+
-                "--resultsDir %s/geogeopifuResults/%s/train " %(DATASET_DIR,NAME)+
-                "--splitNum 12 --splitIdx %s --gpu_id 1 " %(i)+
-                "--load_netV_checkpoint_path ./checkpoints/%s/netV_epoch_29_2899 " %(NAME)+
-                "--load_from_multi_GPU_shape --dataType train --batch_size 1 --mini_dataset"
-            )
-            cmds.append(cmd)
+        cmd = (
+            "python -m apps.test_shape_coarse --datasetDir %s " %(DATASET_DIR)+
+            "--resultsDir %s/%s/train " %(RESULT_DIR,NAME)+
+            "--splitNum 1 --splitIdx 0 --gpu_id 1 " +
+            "--load_netV_checkpoint_path ./checkpoints/%s/netV_epoch_29_127 " %(NAME)+
+            "--load_from_multi_GPU_shape --dataType test --batch_size 1 --mini_dataset"
+        )
+        cmds.append(cmd)
 
     cpu_count = multiprocessing.cpu_count()
     pool = multiprocessing.Pool(processes=cpu_count)
