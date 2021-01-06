@@ -45,32 +45,56 @@ def parse_args():
 
     return args
 
-def get_training_test_indices(args, shuffle):
+# def get_training_test_indices(args, shuffle):
 
-    # sanity check for args.totalNumFrame
-    assert(os.path.exists(args.datasetDir))
-    totalNumFrameTrue = len(glob.glob(args.datasetDir+"/config/*.json"))
-    assert((args.totalNumFrame == totalNumFrameTrue) or (args.totalNumFrame == totalNumFrameTrue+len(consts.black_list_images)//4))
+#     if args.mini_dataset:
+#         print("Using a mini dataset for sanity check purpose for fast convergence...")
+#         # using 0.5% of dataset for sanity check
+#         totalNumFrameTrue = int(len(glob.glob(args.datasetDir+"/config/*.json")) / 106.1)//2 # 512 configs
+#         assert(totalNumFrameTrue == 512)
 
-    max_idx = args.totalNumFrame # total data number: N*M'*4 = 6795*4*4 = 108720
-    indices = np.asarray(range(max_idx))
-    assert(len(indices)%4 == 0)
+#         max_idx = 512
+#         indices = np.asarray(range(max_idx))
+#         assert(len(indices)%4 == 0)
 
-    testing_flag = (indices >= args.trainingDataRatio*max_idx)
-    testing_inds = indices[testing_flag] # 21744 testing indices: array of [86976, ..., 108719]
-    testing_inds = testing_inds.tolist()
-    assert(len(testing_inds) % 4 == 0)
-    if args.num_skip_frames > 1:
-        testing_inds = testing_inds[0::args.num_skip_frames] + testing_inds[1::args.num_skip_frames] + testing_inds[2::args.num_skip_frames] + testing_inds[3::args.num_skip_frames]
-        testing_inds.sort()
-    if shuffle: np.random.shuffle(testing_inds)
+#         testing_flag = (indices >= 0.75*max_idx) # 0.75 * 512 = 384 (train) + 192 (test)
+#         testing_inds = indices[testing_flag] # testing indices extracted using flag 192 testing indices: array of [384, ..., 511]
+#         testing_inds = testing_inds.tolist()
+#         if args.num_skip_frames > 1:
+#             testing_inds = testing_inds[0::args.num_skip_frames] + testing_inds[1::args.num_skip_frames] + testing_inds[2::args.num_skip_frames] + testing_inds[3::args.num_skip_frames]
+#             testing_inds.sort()        
+#         if shuffle: np.random.shuffle(testing_inds)
+#         assert(len(testing_inds) % 4 == 0)
 
-    training_inds = indices[np.logical_not(testing_flag)] # 86976 training indices: array of [0, ..., 86975]
-    training_inds = training_inds.tolist()
-    if shuffle: np.random.shuffle(training_inds)
-    assert(len(training_inds) % 4 == 0)
+#         training_inds = indices[np.logical_not(testing_flag)] # 384 training indices: array of [0, ..., 383]
+#         training_inds = training_inds.tolist()
+#         if shuffle: np.random.shuffle(training_inds)
+#         assert(len(training_inds) % 4 == 0)
+#     else:
+#         # sanity check for args.totalNumFrame
+#         assert(os.path.exists(args.datasetDir))
+#         totalNumFrameTrue = len(glob.glob(args.datasetDir+"/config/*.json"))
+#         assert((args.totalNumFrame == totalNumFrameTrue) or (args.totalNumFrame == totalNumFrameTrue+len(consts.black_list_images)//4))
 
-    return training_inds, testing_inds
+#         max_idx = args.totalNumFrame # total data number: N*M'*4 = 6795*4*4 = 108720
+#         indices = np.asarray(range(max_idx))
+#         assert(len(indices)%4 == 0)
+
+#         testing_flag = (indices >= args.trainingDataRatio*max_idx)
+#         testing_inds = indices[testing_flag] # 21744 testing indices: array of [86976, ..., 108719]
+#         testing_inds = testing_inds.tolist()
+#         assert(len(testing_inds) % 4 == 0)
+#         if args.num_skip_frames > 1:
+#             testing_inds = testing_inds[0::args.num_skip_frames] + testing_inds[1::args.num_skip_frames] + testing_inds[2::args.num_skip_frames] + testing_inds[3::args.num_skip_frames]
+#             testing_inds.sort()
+#         if shuffle: np.random.shuffle(testing_inds)
+
+#         training_inds = indices[np.logical_not(testing_flag)] # 86976 training indices: array of [0, ..., 86975]
+#         training_inds = training_inds.tolist()
+#         if shuffle: np.random.shuffle(training_inds)
+#         assert(len(training_inds) % 4 == 0)
+
+#     return training_inds, testing_inds
 
 def compute_split_range(testing_inds, args):
     """
@@ -212,6 +236,7 @@ class Evaluator:
         # create net
         netG = HGPIFuNet(opt, projection_mode).to(device=cuda)
         print('Using Network: ', netG.name)
+        print('On cuda: ', cuda)
 
         if opt.load_netG_checkpoint_path:
             if self.opt.load_from_multi_GPU_shape    : netG.load_state_dict(self.load_from_multi_GPU(path=self.opt.load_netG_checkpoint_path))
@@ -233,6 +258,12 @@ class Evaluator:
         parameter_size_G = sum([param.nelement() for param in netG.parameters()])
         flop_count       = 0.
         print("Model computation cost: parameter_size_G({}), flop_count({})...".format(parameter_size_G, flop_count))
+
+        if netC:
+            parameter_size_C = sum([param.nelement() for param in netC.parameters()])
+            flop_count       = 0.
+            print("Model computation cost: parameter_size_C({}), flop_count({})...".format(parameter_size_C, flop_count))
+
 
     def load_from_multi_GPU(self, path):
 
@@ -348,15 +379,12 @@ class Evaluator:
             # set to eval mode
             self.netG.eval()
             if self.netC:
-
                 self.netC.eval()
             
             # generate and save the mesh
             if self.netC:
-
                 gen_mesh_color_iccv(opt, self.netG, self.netC, self.cuda, data, save_path, use_octree=use_octree)
             else:
-
                 gen_mesh_iccv(opt, self.netG, self.cuda, data, save_path, use_octree=use_octree)
 
 def main(args):

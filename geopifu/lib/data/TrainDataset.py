@@ -10,6 +10,7 @@ from PIL.ImageFilter import GaussianBlur
 import trimesh
 import logging
 from DataUtil.ObjIO import *
+from lib.train_util import get_training_test_indices
 
 import pdb # pdb.set_trace()
 import glob
@@ -194,48 +195,51 @@ class TrainDatasetICCV(Dataset):
 
     def get_training_test_indices(self, args, shuffle=False):
 
-        if args.mini_dataset:
-            print("Using a mini dataset for sanity check purpose for fast convergence...")
-            # using 0.5% of dataset for sanity check
-            totalNumFrameTrue = int(len(glob.glob(args.datasetDir+"/config/*.json")) / 106.1)//2 # 512 configs
-            assert(totalNumFrameTrue == 512)
-
-            max_idx = 512
-            indices = np.asarray(range(max_idx))
-            assert(len(indices)%4 == 0)
-
-            testing_flag = (indices >= 0.75*max_idx) # 0.75 * 512 = 384 (train) + 192 (test)
-            testing_inds = indices[testing_flag] # testing indices extracted using flag 192 testing indices: array of [384, ..., 511]
-            testing_inds = testing_inds.tolist()
-            if shuffle: np.random.shuffle(testing_inds)
-            assert(len(testing_inds) % 4 == 0)
-
-            training_inds = indices[np.logical_not(testing_flag)] # 384 training indices: array of [0, ..., 383]
-            training_inds = training_inds.tolist()
-            if shuffle: np.random.shuffle(training_inds)
-            assert(len(training_inds) % 4 == 0)
-
-        else:
-            # sanity check for args.totalNumFrame
-            totalNumFrameTrue = len(glob.glob(args.datasetDir+"/config/*.json"))
-            assert((args.totalNumFrame == totalNumFrameTrue) or (args.totalNumFrame == totalNumFrameTrue+len(consts.black_list_images)//4))
-
-            max_idx = args.totalNumFrame # total data number: N*M'*4 = 6795*4*4 = 108720
-            indices = np.asarray(range(max_idx))
-            assert(len(indices)%4 == 0)
-
-            testing_flag = (indices >= args.trainingDataRatio*max_idx)
-            testing_inds = indices[testing_flag] # 21744 testing indices: array of [86976, ..., 108719]
-            testing_inds = testing_inds.tolist()
-            if shuffle: np.random.shuffle(testing_inds)
-            assert(len(testing_inds) % 4 == 0)
-
-            training_inds = indices[np.logical_not(testing_flag)] # 86976 training indices: array of [0, ..., 86975]
-            training_inds = training_inds.tolist()
-            if shuffle: np.random.shuffle(training_inds)
-            assert(len(training_inds) % 4 == 0)
+        training_inds, testing_inds = get_training_test_indices(args, shuffle)
 
         return training_inds, testing_inds
+        # if args.mini_dataset:
+        #     print("Using a mini dataset for sanity check purpose for fast convergence...")
+        #     # using 0.5% of dataset for sanity check
+        #     totalNumFrameTrue = int(len(glob.glob(args.datasetDir+"/config/*.json")) / 106.1)//2 # 512 configs
+        #     assert(totalNumFrameTrue == 512)
+
+        #     max_idx = 512
+        #     indices = np.asarray(range(max_idx))
+        #     assert(len(indices)%4 == 0)
+
+        #     testing_flag = (indices >= 0.75*max_idx) # 0.75 * 512 = 384 (train) + 192 (test)
+        #     testing_inds = indices[testing_flag] # testing indices extracted using flag 192 testing indices: array of [384, ..., 511]
+        #     testing_inds = testing_inds.tolist()
+        #     if shuffle: np.random.shuffle(testing_inds)
+        #     assert(len(testing_inds) % 4 == 0)
+
+        #     training_inds = indices[np.logical_not(testing_flag)] # 384 training indices: array of [0, ..., 383]
+        #     training_inds = training_inds.tolist()
+        #     if shuffle: np.random.shuffle(training_inds)
+        #     assert(len(training_inds) % 4 == 0)
+
+        # else:
+        #     # sanity check for args.totalNumFrame
+        #     totalNumFrameTrue = len(glob.glob(args.datasetDir+"/config/*.json"))
+        #     assert((args.totalNumFrame == totalNumFrameTrue) or (args.totalNumFrame == totalNumFrameTrue+len(consts.black_list_images)//4))
+
+        #     max_idx = args.totalNumFrame # total data number: N*M'*4 = 6795*4*4 = 108720
+        #     indices = np.asarray(range(max_idx))
+        #     assert(len(indices)%4 == 0)
+
+        #     testing_flag = (indices >= args.trainingDataRatio*max_idx)
+        #     testing_inds = indices[testing_flag] # 21744 testing indices: array of [86976, ..., 108719]
+        #     testing_inds = testing_inds.tolist()
+        #     if shuffle: np.random.shuffle(testing_inds)
+        #     assert(len(testing_inds) % 4 == 0)
+
+        #     training_inds = indices[np.logical_not(testing_flag)] # 86976 training indices: array of [0, ..., 86975]
+        #     training_inds = training_inds.tolist()
+        #     if shuffle: np.random.shuffle(training_inds)
+        #     assert(len(training_inds) % 4 == 0)
+
+        # return training_inds, testing_inds
 
     def __len__(self):
 

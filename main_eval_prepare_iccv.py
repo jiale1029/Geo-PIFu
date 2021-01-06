@@ -16,6 +16,7 @@ import cv2 as cv
 import DataUtil.CommonUtil as util
 import torch
 import sys
+
 this_file_path_abs       = os.path.dirname(__file__)
 target_dir_path_relative = os.path.join(this_file_path_abs, 'pyTorchChamferDistance/chamfer_distance')
 target_dir_path_abs      = os.path.abspath(target_dir_path_relative)
@@ -35,6 +36,7 @@ def parse_args():
     parser.add_argument('--splitIdx', type=int, default="0", help="{0, ..., splitNum-1}")
     parser.add_argument('--compute_vn', action='store_true', help="e.g. pifu doesn't compute 'vn' when saving the mesh, thus we compute it now")
     parser.add_argument('--only_compute_additional_metrics', action='store_true', help="e.g. a patch-fix to add additional metrics for previously evaluated exps.")
+    parser.add_argument('--mini_dataset', action='store_true', help="Using a mini_dataset for sanity check.")
 
     args = parser.parse_args()
 
@@ -42,25 +44,46 @@ def parse_args():
 
 def get_training_test_indices(args, shuffle):
 
-    # sanity check for args.totalNumFrame
-    assert(os.path.exists(args.datasetDir))
-    totalNumFrameTrue = len(glob.glob(args.datasetDir+"/config/*.json"))
-    assert((args.totalNumFrame == totalNumFrameTrue) or (args.totalNumFrame == totalNumFrameTrue+len(consts.black_list_images)//4))
+    if args.mini_dataset:
+        print("Using a mini dataset for sanity check purpose for fast convergence...")
+        # using 0.5% of dataset for sanity check
+        totalNumFrameTrue = int(len(glob.glob(args.datasetDir+"/config/*.json")) / 106.1) # 512 configs
+        assert(totalNumFrameTrue == 1024)
 
-    max_idx = args.totalNumFrame # total data number: N*M'*4 = 6795*4*4 = 108720
-    indices = np.asarray(range(max_idx))
-    assert(len(indices)%4 == 0)
+        max_idx = 1024
+        indices = np.asarray(range(max_idx))
+        assert(len(indices)%4 == 0)
 
-    testing_flag = (indices >= args.trainingDataRatio*max_idx)
-    testing_inds = indices[testing_flag] # 21744 testing indices: array of [86976, ..., 108719]
-    testing_inds = testing_inds.tolist()
-    if shuffle: np.random.shuffle(testing_inds)
-    assert(len(testing_inds) % 4 == 0)
+        testing_flag = (indices >= 0.75*max_idx) # 0.75 * 512 = 384 (train) + 192 (test)
+        testing_inds = indices[testing_flag] # testing indices extracted using flag 192 testing indices: array of [384, ..., 511]
+        testing_inds = testing_inds.tolist()
+        if shuffle: np.random.shuffle(testing_inds)
+        assert(len(testing_inds) % 4 == 0)
 
-    training_inds = indices[np.logical_not(testing_flag)] # 86976 training indices: array of [0, ..., 86975]
-    training_inds = training_inds.tolist()
-    if shuffle: np.random.shuffle(training_inds)
-    assert(len(training_inds) % 4 == 0)
+        training_inds = indices[np.logical_not(testing_flag)] # 384 training indices: array of [0, ..., 383]
+        training_inds = training_inds.tolist()
+        if shuffle: np.random.shuffle(training_inds)
+        assert(len(training_inds) % 4 == 0)
+    else:
+        # sanity check for args.totalNumFrame
+        assert(os.path.exists(args.datasetDir))
+        totalNumFrameTrue = len(glob.glob(args.datasetDir+"/config/*.json"))
+        assert((args.totalNumFrame == totalNumFrameTrue) or (args.totalNumFrame == totalNumFrameTrue+len(consts.black_list_images)//4))
+
+        max_idx = args.totalNumFrame # total data number: N*M'*4 = 6795*4*4 = 108720
+        indices = np.asarray(range(max_idx))
+        assert(len(indices)%4 == 0)
+
+        testing_flag = (indices >= args.trainingDataRatio*max_idx)
+        testing_inds = indices[testing_flag] # 21744 testing indices: array of [86976, ..., 108719]
+        testing_inds = testing_inds.tolist()
+        if shuffle: np.random.shuffle(testing_inds)
+        assert(len(testing_inds) % 4 == 0)
+
+        training_inds = indices[np.logical_not(testing_flag)] # 86976 training indices: array of [0, ..., 86975]
+        training_inds = training_inds.tolist()
+        if shuffle: np.random.shuffle(training_inds)
+        assert(len(training_inds) % 4 == 0)
 
     return training_inds, testing_inds
 
@@ -80,6 +103,7 @@ def compute_split_range(testing_inds, args):
 
         # check existance
         meshRefinedPath = "%s/%06d_meshRefined.obj" % (args.resultsDir,eachTestIdx)
+        print(meshRefinedPath)
         assert(os.path.exists(meshRefinedPath))
         
         # save path
@@ -131,8 +155,8 @@ def read_and_canonize_gt_mesh(args,preFix,withTexture=False):
     randomRot = np.array(dataConfig["randomRot"], np.float32)
 
     # load gt mesh
-    gtMeshPath = "%s/../DeepHumanDataset/dataset/%s/%s/mesh.obj" % (args.datasetDir, gtMeshPath.split("/")[-3], gtMeshPath.split("/")[-2])
-    gtMesh = ObjIO.load_obj_data(gtMeshPath)
+    gtMeshPath = "%s/../deephuman_dataset/DeepHumanDataset/dataset/%s/%s/mesh.obj" % (args.datasetDir, gtMeshPath.split("/")[-3], gtMeshPath.split("/")[-2])
+    gtMesh = ObjIO.load_obj_data(gtMeshPath.encode('utf-8'))
 
     # voxel-based canonization for the gt mesh
     gtMesh["vn"] = np.dot(gtMesh["vn"],np.transpose(randomRot))

@@ -7,6 +7,52 @@ import cv2
 from PIL import Image
 from tqdm import tqdm
 import pdb # pdb.set_trace()
+import glob
+
+def get_training_test_indices(args, shuffle):
+
+    if args.mini_dataset:
+        print("Using a mini dataset for sanity check purpose for fast convergence...")
+        # using 0.5% of dataset for sanity check
+        totalNumFrameTrue = int(len(glob.glob(args.datasetDir+"/config/*.json")) / 106.1) # 1024 configs
+        assert(totalNumFrameTrue == 1024)
+
+        max_idx = 1024
+        indices = np.asarray(range(max_idx))
+        assert(len(indices)%4 == 0)
+
+        testing_flag = (indices >= 0.75*max_idx) # 0.75 * 1024 = 768 (train) + 256 (test)
+        testing_inds = indices[testing_flag] # testing indices extracted using flag 256 testing indices: array of [768, ..., 1024]
+        testing_inds = testing_inds.tolist()
+        if shuffle: np.random.shuffle(testing_inds)
+        assert(len(testing_inds) % 4 == 0)
+
+        training_inds = indices[np.logical_not(testing_flag)] # 384 training indices: array of [0, ..., 767]
+        training_inds = training_inds.tolist()
+        if shuffle: np.random.shuffle(training_inds)
+        assert(len(training_inds) % 4 == 0)
+    else:
+        # sanity check for args.totalNumFrame
+        assert(os.path.exists(args.datasetDir))
+        totalNumFrameTrue = len(glob.glob(args.datasetDir+"/config/*.json"))
+        assert((args.totalNumFrame == totalNumFrameTrue) or (args.totalNumFrame == totalNumFrameTrue+len(consts.black_list_images)//4))
+
+        max_idx = args.totalNumFrame # total data number: N*M'*4 = 6795*4*4 = 108720
+        indices = np.asarray(range(max_idx))
+        assert(len(indices)%4 == 0)
+
+        testing_flag = (indices >= args.trainingDataRatio*max_idx)
+        testing_inds = indices[testing_flag] # 21744 testing indices: array of [86976, ..., 108719]
+        testing_inds = testing_inds.tolist()
+        if shuffle: np.random.shuffle(testing_inds)
+        assert(len(testing_inds) % 4 == 0)
+
+        training_inds = indices[np.logical_not(testing_flag)] # 86976 training indices: array of [0, ..., 86975]
+        training_inds = training_inds.tolist()
+        if shuffle: np.random.shuffle(training_inds)
+        assert(len(training_inds) % 4 == 0)
+
+    return training_inds, testing_inds
 
 def save_volume(volume, fname, dim_h, dim_w, voxel_size):
     dim_h_half = dim_h / 2
