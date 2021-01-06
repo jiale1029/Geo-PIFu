@@ -1198,7 +1198,6 @@ def main(args):
     # determine split range, for multi-process running
     splitRange = compute_split_range(dataNum=meshNum,splitNum=args.splitNum,splitIdx=args.splitIdx)
 
-    print(len(meshPaths))
     # for each mesh
     t_used = 0.
     for meshIdx in range(meshNum):

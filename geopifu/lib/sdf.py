@@ -1,4 +1,5 @@
 import numpy as np
+import pdb
 
 
 def create_grid(resX, resY, resZ, b_min=np.array([0, 0, 0]), b_max=np.array([1, 1, 1]), transform=None):
@@ -49,7 +50,10 @@ def batch_eval(points, eval_func, num_samples=512 * 512 * 512):
     num_pts = points.shape[1] # 256*256*256
     sdf = np.zeros(num_pts)   # 256*256*256
 
+    # print("Num pts: ", num_pts)
+    # print("Num samples: ", num_samples)
     num_batches = num_pts // num_samples # num of batches
+    # print("Num batches: ", num_batches)
 
     # for each batch of pts, estimate their occupancy values
     for i in range(num_batches):

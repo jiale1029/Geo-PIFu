@@ -3,9 +3,10 @@ import numpy as np
 import torch
 from .sdf import create_grid, eval_grid_octree, eval_grid
 from skimage import measure
+import pdb
 
 
-def reconstruction_iccv(net, cuda, calib_tensor, resolution_x, resolution_y, resolution_z, b_min, b_max, use_octree=False, num_samples=700000, transform=None, deepVoxels=None):
+def reconstruction_iccv(net, cuda, calib_tensor, resolution_x, resolution_y, resolution_z, b_min, b_max, use_octree=False, num_samples=610000, transform=None, deepVoxels=None):
     '''
     Reconstruct meshes from sdf predicted by the network.
     :param net: a BasePixImpNet object. call image filter beforehead.
@@ -28,16 +29,20 @@ def reconstruction_iccv(net, cuda, calib_tensor, resolution_x, resolution_y, res
     def eval_func(points):
         points  = np.expand_dims(points, axis=0)                   # (1,         3, num_samples)
         points  = np.repeat(points, net.num_views, axis=0)         # (num_views, 3, num_samples)
-        samples = torch.from_numpy(points).to(device=cuda).float() # (num_views, 3, num_samples)
+        samples = torch.from_numpy(points).to(device=cuda).float() # (num_views, 3, num_samples))
         net.query(points=samples, calibs=calib_tensor, deepVoxels=deepVoxels) # calib_tensor is (num_views, 4, 4)
         pred = net.get_preds()[0][0]                               # (num_samples,)
         return pred.detach().cpu().numpy()   
 
     # Then we evaluate the grid, use_octree default: True
-    if use_octree:
-        sdf = eval_grid_octree(coords, eval_func, num_samples=num_samples) # XYZ, WHD, (256, 256, 256), float 0. ~ 1. for occupancy
-    else:
-        sdf = eval_grid(coords, eval_func, num_samples=num_samples) # XYZ, WHD, (256, 256, 256), float 0. ~ 1. for occupancy
+    try:
+        if use_octree:
+            sdf = eval_grid_octree(coords, eval_func, num_samples=num_samples) # XYZ, WHD, (256, 256, 256), float 0. ~ 1. for occupancy
+        else:
+            sdf = eval_grid(coords, eval_func, num_samples=num_samples) # XYZ, WHD, (256, 256, 256), float 0. ~ 1. for occupancy
+    except:
+        print('Error: Please adjust num_samples to fit into gpu memory size.')
+        raise
 
     # Finally we do marching cubes
     try:

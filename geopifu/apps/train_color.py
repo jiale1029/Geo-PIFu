@@ -27,7 +27,7 @@ from torch import nn
 # get options
 opt = BaseOptions().parse()
 
-def train(opt, visualCheck_0=False):
+def train(opt, visualCheck_0=False, visualCheck_1=False):
 
     # ----- init. -----
 
@@ -179,7 +179,7 @@ def train(opt, visualCheck_0=False):
                       iter_net_time   - iter_start_time, # network training time
                       int(eta // 60),             # remaining min(s)
                       int(eta - 60 * (eta // 60)) # left-over sec(s)                                                                                                                                      )
-                     )
+                     ))
 
             # save weights for every opt.freq_save iters, 50 iters
             if (train_idx == len(train_data_loader)-1) or (train_idx % opt.freq_save == 0 and train_idx != 0):
@@ -196,7 +196,7 @@ def train(opt, visualCheck_0=False):
 
                 # .png (with augmentation)
                 save_path = '%s/%s/pred_%d_%d.png' % (opt.results_path, opt.name, epoch, train_idx)
-                image_tensor_reshaped = image_tensor.view(label_tensor.shape[0], -1, image_tensor.shape[-3], image_tensor.shape[-2], image_tensor.shape[-1]) # (B==2, num_views, C, W, H)
+                image_tensor_reshaped = image_tensor.view(image_tensor.shape[0], -1, image_tensor.shape[-3], image_tensor.shape[-2], image_tensor.shape[-1]) # (B==2, num_views, C, W, H)
                 img_BGR = ((np.transpose(image_tensor_reshaped[0,0].detach().cpu().numpy(), (1, 2, 0)) * 0.5 + 0.5)*255.).astype(np.uint8)[:,:,::-1] # RGB to BGR, (512,512,3), [0, 255]
                 cv2.imwrite(save_path, img_BGR)          # cv2 save BGR-array into proper-color.png
 
