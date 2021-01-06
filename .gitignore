@@ -4,6 +4,7 @@
 **/**/*.npy
 **/**/*.obj
 **/**/*.ply
+UVTextureConverter/*
 geopifu/checkpoints/*
 geopifu/results/*
 voxelizer/*
