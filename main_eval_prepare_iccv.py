@@ -22,6 +22,7 @@ target_dir_path_relative = os.path.join(this_file_path_abs, 'pyTorchChamferDista
 target_dir_path_abs      = os.path.abspath(target_dir_path_relative)
 sys.path.insert(0, target_dir_path_abs)
 from chamfer_distance import ChamferDistance # https://github.com/chrdiller/pyTorchChamferDistance
+from geopifu.lib.train_util import get_training_test_indices
 
 
 def parse_args():
@@ -36,56 +37,13 @@ def parse_args():
     parser.add_argument('--splitIdx', type=int, default="0", help="{0, ..., splitNum-1}")
     parser.add_argument('--compute_vn', action='store_true', help="e.g. pifu doesn't compute 'vn' when saving the mesh, thus we compute it now")
     parser.add_argument('--only_compute_additional_metrics', action='store_true', help="e.g. a patch-fix to add additional metrics for previously evaluated exps.")
-    parser.add_argument('--mini_dataset', action='store_true', help="Using a mini_dataset for sanity check.")
+    parser.add_argument('--datasetType', type=str, default='all', help="all, mini, adjusted")
+    parser.add_argument('--gpu_id', type=int, default=0, help="GPU Id")
 
     args = parser.parse_args()
 
     return args
 
-def get_training_test_indices(args, shuffle):
-
-    if args.mini_dataset:
-        print("Using a mini dataset for sanity check purpose for fast convergence...")
-        # using 0.5% of dataset for sanity check
-        totalNumFrameTrue = int(len(glob.glob(args.datasetDir+"/config/*.json")) / 106.1) # 512 configs
-        assert(totalNumFrameTrue == 1024)
-
-        max_idx = 1024
-        indices = np.asarray(range(max_idx))
-        assert(len(indices)%4 == 0)
-
-        testing_flag = (indices >= 0.75*max_idx) # 0.75 * 512 = 384 (train) + 192 (test)
-        testing_inds = indices[testing_flag] # testing indices extracted using flag 192 testing indices: array of [384, ..., 511]
-        testing_inds = testing_inds.tolist()
-        if shuffle: np.random.shuffle(testing_inds)
-        assert(len(testing_inds) % 4 == 0)
-
-        training_inds = indices[np.logical_not(testing_flag)] # 384 training indices: array of [0, ..., 383]
-        training_inds = training_inds.tolist()
-        if shuffle: np.random.shuffle(training_inds)
-        assert(len(training_inds) % 4 == 0)
-    else:
-        # sanity check for args.totalNumFrame
-        assert(os.path.exists(args.datasetDir))
-        totalNumFrameTrue = len(glob.glob(args.datasetDir+"/config/*.json"))
-        assert((args.totalNumFrame == totalNumFrameTrue) or (args.totalNumFrame == totalNumFrameTrue+len(consts.black_list_images)//4))
-
-        max_idx = args.totalNumFrame # total data number: N*M'*4 = 6795*4*4 = 108720
-        indices = np.asarray(range(max_idx))
-        assert(len(indices)%4 == 0)
-
-        testing_flag = (indices >= args.trainingDataRatio*max_idx)
-        testing_inds = indices[testing_flag] # 21744 testing indices: array of [86976, ..., 108719]
-        testing_inds = testing_inds.tolist()
-        if shuffle: np.random.shuffle(testing_inds)
-        assert(len(testing_inds) % 4 == 0)
-
-        training_inds = indices[np.logical_not(testing_flag)] # 86976 training indices: array of [0, ..., 86975]
-        training_inds = training_inds.tolist()
-        if shuffle: np.random.shuffle(training_inds)
-        assert(len(training_inds) % 4 == 0)
-
-    return training_inds, testing_inds
 
 def compute_split_range(testing_inds, args):
     """
@@ -349,9 +307,12 @@ def compute_point_based_metrics(args,estMeshPath,preFix,chamfer_dist,scale):
         ObjIO.save_obj_data_color( gtMesh,  "./examples/%06d_meshGT_for_pointDis.obj" % (preFix))
         pdb.set_trace()
 
+    device = torch.device("cuda: %d" %(args.gpu_id)) if torch.cuda.is_available() else torch.device("cpu")
+    torch.cuda.set_device(device)
+
     # compute gt vertex to est mesh distance
-    estMesh_v = torch.from_numpy((estMesh["v"][None,:,:]).astype(np.float32)).cuda().contiguous() # e.g. (46918, 3), torch.float32
-    gtMesh_v  = torch.from_numpy( (gtMesh["v"][None,:,:]).astype(np.float32)).cuda().contiguous() # e.g. (93182, 3), torch.float32
+    estMesh_v = torch.from_numpy((estMesh["v"][None,:,:]).astype(np.float32)).to(device).contiguous() # e.g. (46918, 3), torch.float32
+    gtMesh_v  = torch.from_numpy( (gtMesh["v"][None,:,:]).astype(np.float32)).to(device).contiguous() # e.g. (93182, 3), torch.float32
     dist_left2right, dist_right2left = chamfer_dist(gtMesh_v, estMesh_v)
     gtV_2_estM_dis = torch.mean(dist_left2right).item()
 

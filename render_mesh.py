@@ -1210,7 +1210,7 @@ def main(args):
         # randomly select a subset of M' (default is 4) background types
         selectedBgNamesIdx = np.random.choice(len(BACKGROUND_NAMES), args.eachMeshWithBgNum, replace=False)
 
-        # for each selected background type, randomly select 4 (default) images
+        # for each selected background type, randomly select 1 bg_image
         for nameIdx in range(args.eachMeshWithBgNum):
 
             # randomly select an image from this background type using the index obtained above

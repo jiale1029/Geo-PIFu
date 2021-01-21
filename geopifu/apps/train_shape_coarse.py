@@ -74,18 +74,18 @@ def train(opt):
 
     train_dataset   = TrainDatasetICCV(opt, phase='train')
     test_dataset    = TrainDatasetICCV(opt, phase='test')
+    print('train data sizes: ', len(train_dataset)) # 360, (number-of-training-meshes * 360-degree-renderings) := namely, the-number-of-training-views
     projection_mode = train_dataset.projection_mode # default: 'orthogonal'
 
     # train dataloader
     train_data_loader = DataLoader(train_dataset, batch_size=opt.batch_size, shuffle=not opt.serial_batches, num_workers=opt.num_threads, pin_memory=opt.pin_memory)
-    print('train data sizes: ', len(train_dataset)) # 360, (number-of-training-meshes * 360-degree-renderings) := namely, the-number-of-training-views
     print('train data iters for each epoch: ', len(train_data_loader)) # ceil[train-data-sizes / batch_size]
 
     # test dataloader: batch size should be 1 and use all the points for evaluation
     # test_data_loader = DataLoader(test_dataset, batch_size=1, shuffle=False, num_workers=opt.num_threads, pin_memory=opt.pin_memory)
     print('test data sizes: ', len(test_dataset)) # 360, (number-of-test-meshes * 360-degree-renderings) := namely, the-number-of-training-views
     # print('test data iters for each epoch: ', len(test_data_loader)) # ceil[test-data-sizes / 1]
-
+    pdb.set_trace()
     # ----- build networks -----
 
     # {create, deploy} networks to the specified GPU
@@ -131,11 +131,14 @@ def train(opt):
         model_path = '%s/%s/netV_epoch_%d_%d' % (opt.checkpoints_path, opt.resume_name, opt.resume_epoch, opt.resume_iter)
         print('Resuming from ', model_path)
         assert(os.path.exists(model_path))
-        netV.load_state_dict(torch.load(model_path, map_location=cuda))
+        if opt.load_from_multi_GPU_shape    : netV.load_state_dict(load_from_multi_GPU(path=model_path))
+        if not opt.load_from_multi_GPU_shape: netV.load_state_dict(torch.load(model_path, map_location=cuda))
+        # netV.load_state_dict(torch.load(model_path, map_location=cuda))
 
         # change lr
         for epoch in range(0, opt.resume_epoch+1):
-            lr_dis = adjust_learning_rate(optimizer_dis, epoch, lr_dis, opt.schedule, opt.gamma)
+            if opt.use_3d_gan:
+                lr_dis = adjust_learning_rate(optimizer_dis, epoch, lr_dis, opt.schedule, opt.gamma)
             lr     = adjust_learning_rate(   optimizerV, epoch,     lr, opt.schedule, opt.gamma)
 
     # ----- enter the training loop -----

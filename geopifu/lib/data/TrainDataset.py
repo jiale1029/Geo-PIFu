@@ -167,6 +167,14 @@ class TrainDatasetICCV(Dataset):
         # self.mesh_dic = load_trimesh_iccv(self.subjects)
         # self.mesh_dic = {}
         self.training_inds, self.testing_inds = self.get_training_test_indices(args=self.opt, shuffle=False)
+        # this is to maintain the mapping from dataloader index to true index
+        # since we skip indexes in adjusted dataset
+        if self.is_train: 
+            self.index_mapping = {idx: true_idx for idx, true_idx in enumerate(self.training_inds)}
+        else:
+            self.index_mapping = {idx: true_idx for idx, true_idx in enumerate(self.testing_inds)}
+        # print(self.index_mapping)
+        # pdb.set_trace()
 
         # record epoch idx for offline query sampling
         self.epochIdx = 0
@@ -198,48 +206,6 @@ class TrainDatasetICCV(Dataset):
         training_inds, testing_inds = get_training_test_indices(args, shuffle)
 
         return training_inds, testing_inds
-        # if args.mini_dataset:
-        #     print("Using a mini dataset for sanity check purpose for fast convergence...")
-        #     # using 0.5% of dataset for sanity check
-        #     totalNumFrameTrue = int(len(glob.glob(args.datasetDir+"/config/*.json")) / 106.1)//2 # 512 configs
-        #     assert(totalNumFrameTrue == 512)
-
-        #     max_idx = 512
-        #     indices = np.asarray(range(max_idx))
-        #     assert(len(indices)%4 == 0)
-
-        #     testing_flag = (indices >= 0.75*max_idx) # 0.75 * 512 = 384 (train) + 192 (test)
-        #     testing_inds = indices[testing_flag] # testing indices extracted using flag 192 testing indices: array of [384, ..., 511]
-        #     testing_inds = testing_inds.tolist()
-        #     if shuffle: np.random.shuffle(testing_inds)
-        #     assert(len(testing_inds) % 4 == 0)
-
-        #     training_inds = indices[np.logical_not(testing_flag)] # 384 training indices: array of [0, ..., 383]
-        #     training_inds = training_inds.tolist()
-        #     if shuffle: np.random.shuffle(training_inds)
-        #     assert(len(training_inds) % 4 == 0)
-
-        # else:
-        #     # sanity check for args.totalNumFrame
-        #     totalNumFrameTrue = len(glob.glob(args.datasetDir+"/config/*.json"))
-        #     assert((args.totalNumFrame == totalNumFrameTrue) or (args.totalNumFrame == totalNumFrameTrue+len(consts.black_list_images)//4))
-
-        #     max_idx = args.totalNumFrame # total data number: N*M'*4 = 6795*4*4 = 108720
-        #     indices = np.asarray(range(max_idx))
-        #     assert(len(indices)%4 == 0)
-
-        #     testing_flag = (indices >= args.trainingDataRatio*max_idx)
-        #     testing_inds = indices[testing_flag] # 21744 testing indices: array of [86976, ..., 108719]
-        #     testing_inds = testing_inds.tolist()
-        #     if shuffle: np.random.shuffle(testing_inds)
-        #     assert(len(testing_inds) % 4 == 0)
-
-        #     training_inds = indices[np.logical_not(testing_flag)] # 86976 training indices: array of [0, ..., 86975]
-        #     training_inds = training_inds.tolist()
-        #     if shuffle: np.random.shuffle(training_inds)
-        #     assert(len(training_inds) % 4 == 0)
-
-        # return training_inds, testing_inds
 
     def __len__(self):
 
@@ -279,6 +245,7 @@ class TrainDatasetICCV(Dataset):
         calib_list = []
         extrinsic_list = []
         mask_list = []
+        img_path_list = []
         
         # get a list of view ids, (if multi-view enabled)
         assert(num_views <= len(view_id_list))
@@ -314,6 +281,7 @@ class TrainDatasetICCV(Dataset):
                 if not os.path.exists(image_path):
                     print("Can not find %s!!!" % (image_path))
                     pdb.set_trace()
+                img_path_list.append(image_path)
 
                 # read data BGR -> RGB, np.uint8
                 image = cv2.imread(image_path)[:,:,::-1] # (1536, 1024, 3), np.uint8, {0,...,255}
@@ -422,7 +390,8 @@ class TrainDatasetICCV(Dataset):
         return {'img'      : torch.stack(render_list   , dim=0),
                 'calib'    : torch.stack(calib_list    , dim=0), # model will be transformed into a XY-plane-center-aligned-2x2x2-volume of the cam. coord.
                 'extrinsic': torch.stack(extrinsic_list, dim=0),
-                'mask'     : torch.stack(mask_list     , dim=0)
+                'mask'     : torch.stack(mask_list     , dim=0),
+                'img_path' : img_path_list
                }
 
     def get_render(self, subject, num_views, yid=0, pid=0, random_sample=False):
@@ -715,6 +684,29 @@ class TrainDatasetICCV(Dataset):
                 'labels' : labels   # (1, n_in + n_out), 1.0-inside, 0.0-outside
                }
 
+    def get_color_sampling_offline(self, index):
+        """
+            color_data
+                "color_samples" : (3, num_sample_color), float XYZ coords are inside the 3d-volume of [self.B_MIN, self.B_MAX]
+                "rgbs"          : (3, num_sample_color), -1 ~ 1 float
+        """
+        color_samples_path  = "%s/%s/%06d_ep%03d_colorPts.npy"  % (self.opt.datasetDir, self.opt.colorSampleType, index, self.epochIdx)
+        rgbs_path  = "%s/%s/%06d_ep%03d_rgbs.npy"  % (self.opt.datasetDir, self.opt.colorSampleType, index, self.epochIdx)
+
+        assert(os.path.exists(color_samples_path) and os.path.exists(rgbs_path))
+
+        # load from file
+        samples = np.load(color_samples_path)
+        rgbs_color = np.load(rgbs_path)
+
+        # convert to tensor
+        samples = torch.Tensor(samples).float()
+        rgbs_color = torch.Tensor(rgbs_color).float()
+
+        return {'color_samples': samples, # (3, num_sample_color), XYZ coords
+                'rgbs': rgbs_color        # (3, num_sample_color), -1 ~ 1 float
+               }        
+
     def get_color_sampling_new(self, dataConfig):
         """
             color_data
@@ -722,10 +714,7 @@ class TrainDatasetICCV(Dataset):
                 "rgbs"          : (3, num_sample_color), -1 ~ 1 float
         """
         meshPathTmp = dataConfig["meshPath"]
-        # print(meshPathTmp)
         assert(os.path.exists(meshPathTmp))
-
-        # gt_mesh_path = "/mnt/tanjiale/geopifu_dataset/deephuman_dataset/DeepHumanDataset/dataset/results_gyc_20181010_hsc_1_M/11248/mesh.obj"
         mesh = load_obj_data(meshPathTmp)
 
         randomRot           = np.array(dataConfig["randomRot"], np.float32) # by random R
@@ -933,7 +922,7 @@ class TrainDatasetICCV(Dataset):
 
         # ----- determine {volume_id, view_front_id, view_right_id, view_back_id, view_left_id} -----
 
-        if not self.is_train: index += len(self.training_inds)
+        # if not self.is_train: index += len(self.training_inds)
 
         volume_id  = index // 4 * 4
         view_id    = index - volume_id
@@ -959,7 +948,7 @@ class TrainDatasetICCV(Dataset):
                "b_max"        : self.B_MAX,
                "in_black_list": ("%06d"%index) in consts.black_list_images
               }
-
+        # print(index, ": ", self.index_mapping[index])
         # ----- load "img", "calib", "extrinsic", "mask" -----
 
         """
@@ -1021,9 +1010,8 @@ class TrainDatasetICCV(Dataset):
                 "color_samples" : (3, num_sample_color), float XYZ coords are inside the 3d-volume of [self.B_MIN, self.B_MAX]
                 "rgbs"          : (3, num_sample_color), -1 ~ 1 float
             """
-            # color_data = self.get_color_sampling(subject, yid=yid, pid=pid)
-            color_data = self.get_color_sampling_new(dataConfig)
-            
+            # color_data = self.get_color_sampling_new(dataConfig)
+            color_data = self.get_color_sampling_offline(index) if (self.is_train and (not self.opt.online_sampling)) else self.get_color_sampling_new(dataConfig)
             res.update(color_data)
 
         # ----- load "meshVoxels" -----
@@ -1164,6 +1152,11 @@ class TrainDatasetICCV(Dataset):
         #     return self.get_item(index=random.randint(0, self.__len__() - 1))
 
     def __getitem__(self, index):
+        # make sure the index is mapped
+        assert(index in self.index_mapping)
+        # convert to true index for getting the data using path
+        # print(index, ":", self.index_mapping.get(index, None))
+        index = self.index_mapping[index]
         return self.get_item(index)
 
 class TrainDataset(Dataset):

@@ -5,6 +5,8 @@ import os
 import glob
 import json
 import pdb # pdb.set_trace()
+from geopifu.lib.train_util import get_training_test_indices
+
 
 def parse_args():
 
@@ -14,56 +16,12 @@ def parse_args():
     parser.add_argument('--trainingDataRatio', type=float, default="0.8")
     parser.add_argument('--datasetDir', type=str, default="/trainman-mount/trainman-storage-d5c0a121-bb5d-4afb-8020-c53f096d2a5c/data/humanRender")
     parser.add_argument('--resultsDir', type=str, default="/trainman-mount/trainman-storage-d5c0a121-bb5d-4afb-8020-c53f096d2a5c/data/humanRender/deepHumanResults/expName")
-    parser.add_argument('--mini_dataset', action='store_true', help="Using a mini_dataset for sanity check.")
+    parser.add_argument('--datasetType', type=str, default='all', help="all, mini, adjusted")
 
     args = parser.parse_args()
 
     return args
 
-def get_training_test_indices(args, shuffle):
-
-    if args.mini_dataset:
-        print("Using a mini dataset for sanity check purpose for fast convergence...")
-        # using 0.5% of dataset for sanity check
-        totalNumFrameTrue = int(len(glob.glob(args.datasetDir+"/config/*.json")) / 106.1) # 512 configs
-        assert(totalNumFrameTrue == 1024)
-
-        max_idx = 1024
-        indices = np.asarray(range(max_idx))
-        assert(len(indices)%4 == 0)
-
-        testing_flag = (indices >= 0.75*max_idx) # 0.75 * 512 = 384 (train) + 192 (test)
-        testing_inds = indices[testing_flag] # testing indices extracted using flag 192 testing indices: array of [384, ..., 511]
-        testing_inds = testing_inds.tolist()
-        if shuffle: np.random.shuffle(testing_inds)
-        assert(len(testing_inds) % 4 == 0)
-
-        training_inds = indices[np.logical_not(testing_flag)] # 384 training indices: array of [0, ..., 383]
-        training_inds = training_inds.tolist()
-        if shuffle: np.random.shuffle(training_inds)
-        assert(len(training_inds) % 4 == 0)
-    else:
-        # sanity check for args.totalNumFrame
-        assert(os.path.exists(args.datasetDir))
-        totalNumFrameTrue = len(glob.glob(args.datasetDir+"/config/*.json"))
-        assert((args.totalNumFrame == totalNumFrameTrue) or (args.totalNumFrame == totalNumFrameTrue+len(consts.black_list_images)//4))
-
-        max_idx = args.totalNumFrame # total data number: N*M'*4 = 6795*4*4 = 108720
-        indices = np.asarray(range(max_idx))
-        assert(len(indices)%4 == 0)
-
-        testing_flag = (indices >= args.trainingDataRatio*max_idx)
-        testing_inds = indices[testing_flag] # 21744 testing indices: array of [86976, ..., 108719]
-        testing_inds = testing_inds.tolist()
-        if shuffle: np.random.shuffle(testing_inds)
-        assert(len(testing_inds) % 4 == 0)
-
-        training_inds = indices[np.logical_not(testing_flag)] # 86976 training indices: array of [0, ..., 86975]
-        training_inds = training_inds.tolist()
-        if shuffle: np.random.shuffle(training_inds)
-        assert(len(training_inds) % 4 == 0)
-
-    return training_inds, testing_inds
 
 def main(args):
 
@@ -82,7 +40,11 @@ def main(args):
         # logs
         if ("%06d"%(idx)) in consts.black_list_images: continue
         expName = args.resultsDir.split("/")[-1]
-        print("%s read metrics %06d/%06d..." % (expName, count, len(testing_inds)-len(consts.black_list_images)))
+        if args.datasetType == "all":
+            print("%s read metrics %06d/%06d..." % (expName, count+len(training_inds),
+                                                    len(training_inds) + len(testing_inds)-len(consts.black_list_images)))
+        else:
+            print("%s read metrics %06d/%06d..." % (expName, count+len(training_inds), len(training_inds) + len(testing_inds)))
         count += 1
 
         # get path of evalMetrics.json
@@ -114,7 +76,7 @@ def main(args):
     print("\n\n\n\nAverage evaluation metrics:\n\n{}".format(avgEvalMetrics))
     avgEvalMetricsPath = "%s/avgEvalMetrics.json" % (args.resultsDir)
     with open(avgEvalMetricsPath, 'w') as outfile: json.dump(avgEvalMetrics, outfile)
-    visualCheck = True
+    visualCheck = False
     if visualCheck:
         print("check average eval metrics json results...")
         os.system("cp %s ./examples/avgEvalMetrics.json" % (avgEvalMetricsPath))
