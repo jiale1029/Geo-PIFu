@@ -8,3 +8,4 @@ UVTextureConverter/*
 geopifu/checkpoints/*
 geopifu/results/*
 voxelizer/*
+**/**/*.pyc
