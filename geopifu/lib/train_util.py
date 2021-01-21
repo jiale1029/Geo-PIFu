@@ -1,3 +1,5 @@
+# -*- coding: UTF-8 -*-
+
 import torch
 import numpy as np
 from .mesh_util import *
@@ -11,8 +13,8 @@ import glob
 
 def get_training_test_indices(args, shuffle):
 
-    if args.mini_dataset:
-        print("Using a mini dataset for sanity check purpose for fast convergence...")
+    if args.datasetType == "mini":
+        print("Using the first 1024 data for sanity check purpose for fast convergence...")
         # using 0.5% of dataset for sanity check
         totalNumFrameTrue = int(len(glob.glob(args.datasetDir+"/config/*.json")) / 106.1) # 1024 configs
         assert(totalNumFrameTrue == 1024)
@@ -31,7 +33,42 @@ def get_training_test_indices(args, shuffle):
         training_inds = training_inds.tolist()
         if shuffle: np.random.shuffle(training_inds)
         assert(len(training_inds) % 4 == 0)
+    elif args.datasetType == "adjusted":
+        print("Using an adjusted dataset for training and testing...")
+        # every 16 you get a new mesh, within this 16, every 4 you get a new background,
+        # within this 4, you get a different viewpoint
+        # total of 6795 meshes, 6795 * 16 = 108720 in total
+        # here we only take one background for each mesh (with 4 different viewpoints)
+        indices = []
+        for i in range(0, 108720, 16):
+            indices.append(i)
+            indices.append(i+1)
+            indices.append(i+2)
+            indices.append(i+3)
+            indices.append(i+4)
+            indices.append(i+5)
+            indices.append(i+6)
+            indices.append(i+7)
+        indices = np.asarray(indices)
+        assert(len(indices)%4 == 0)
+
+        max_idx = 2048
+        indices = indices[:max_idx]
+
+        # testing_flag = (indices >= 0.75*max_idx)
+        testing_inds = indices[int(0.75*len(indices)):]
+        testing_inds = testing_inds.tolist()
+        if shuffle: np.random.shuffle(testing_inds)
+        assert(len(testing_inds) % 4 == 0)
+
+        # training_inds = indices[np.logical_not(testing_flag)] # 384 training indices: array of [0, ..., 767]
+        training_inds = indices[:int(0.75*len(indices))]
+        training_inds = training_inds.tolist()
+        if shuffle: np.random.shuffle(training_inds)
+        assert(len(training_inds) % 4 == 0)
+
     else:
+        print("Using all data for training and testing...")
         # sanity check for args.totalNumFrame
         assert(os.path.exists(args.datasetDir))
         totalNumFrameTrue = len(glob.glob(args.datasetDir+"/config/*.json"))
