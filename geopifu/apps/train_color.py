@@ -27,6 +27,20 @@ from torch import nn
 # get options
 opt = BaseOptions().parse()
 
+def load_from_multi_GPU(path):
+
+    # original saved file with DataParallel
+    state_dict = torch.load(path)
+
+    # create new OrderedDict that does not contain `module.`
+    from collections import OrderedDict
+    new_state_dict = OrderedDict()
+    for k, v in state_dict.items():
+        name = k[7:] # remove `module.`
+        new_state_dict[name] = v
+
+    return new_state_dict
+
 def train(opt, visualCheck_0=False, visualCheck_1=False):
 
     # ----- init. -----
@@ -87,7 +101,8 @@ def train(opt, visualCheck_0=False, visualCheck_1=False):
     if opt.load_netG_checkpoint_path is not None:
         print('loading for net G ...', opt.load_netG_checkpoint_path)
         assert(os.path.exists(opt.load_netG_checkpoint_path))
-        netG.load_state_dict(torch.load(opt.load_netG_checkpoint_path, map_location=cuda), strict=not opt.partial_load)
+        if opt.load_from_multi_GPU_shape    : netG.load_state_dict(load_from_multi_GPU(path=opt.load_netG_checkpoint_path), strict= not opt.partial_load)
+        if not opt.load_from_multi_GPU_shape: netG.load_state_dict(torch.load(opt.load_netG_checkpoint_path, map_location=cuda), strict=not opt.partial_load)
     else:
         print('Missing load_netG_checkpoint_path...')
         pdb.set_trace()
@@ -135,11 +150,14 @@ def train(opt, visualCheck_0=False, visualCheck_1=False):
                 img_BGR = ((np.transpose(image_tensor[0,0].detach().cpu().numpy(), (1, 2, 0)) * 0.5 + 0.5)*255.).astype(np.uint8)[:,:,::-1] # RGB to BGR, (512,512,3), [0, 255]
                 img_RGB = img_BGR[:,:,::-1]
                 pdb.set_trace()
+                os.makedirs("./sample_images", exist_ok=True)
                 cv2.imwrite("./sample_images/%s_img_input_by_cv2.png"%(opt.name), img_BGR)          # cv2 save BGR-array into proper-color.png
                 Image.fromarray(img_RGB).save("./sample_images/%s_img_input_by_PIL.png"%(opt.name)) # PIL save RGB-array into proper-color.png
             if visualCheck_1:
                 print("Debug: verify that sampled color points is reasonable")
-                save_path = '%s/%s/pred_col_%d_%d.ply' % (opt.results_path, opt.name, epoch, train_idx)
+                save_path = '%s/%s/data_col_%d_%d.ply' % (opt.results_path, opt.name, epoch, train_idx)
+                print(save_path)
+                print(rgb_tensor.shape)
                 rgb = rgb_tensor[0].transpose(1, 0).cpu() * 0.5 + 0.5
                 points = color_sample_tensor[0].transpose(1, 0).cpu()
                 save_samples_rgb(save_path, points.detach().numpy(), rgb.detach().numpy())
@@ -190,8 +208,8 @@ def train(opt, visualCheck_0=False, visualCheck_1=False):
             if (train_idx == len(train_data_loader)-1) or (train_idx % opt.freq_save_ply) == 0:
 
                 save_path = '%s/%s/pred_col_%d_%d.ply' % (opt.results_path, opt.name, epoch, train_idx)
-                rgb = res[0].transpose(0, 1).cpu() * 0.5 + 0.5
-                points = color_sample_tensor[0].transpose(0, 1).cpu()
+                rgb = res[0].transpose(1, 0).cpu() * 0.5 + 0.5
+                points = color_sample_tensor[0].transpose(1, 0).cpu()
                 save_samples_rgb(save_path, points.detach().numpy(), rgb.detach().numpy())
 
                 # .png (with augmentation)
@@ -232,7 +250,7 @@ def train(opt, visualCheck_0=False, visualCheck_1=False):
                 # compute metrics for 100 train frames
                 print('calc error (train) ...')
                 train_dataset.allow_aug = False # switch-off training data aug.
-                train_errors = calc_error_color(opt, netG, netC, cuda, test_dataset, num_tests=50)
+                train_errors = calc_error_color(opt, netG, netC, cuda, train_dataset, num_tests=50)
                 train_dataset.allow_aug = True  # switch-on  training data aug.
                 text_show_1 = 'Epoch-{} | eval train MSE: {:06f} '.format(epoch, train_errors)
                 print(text_show_1)
