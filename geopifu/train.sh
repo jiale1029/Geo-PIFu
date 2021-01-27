@@ -13,12 +13,12 @@ DATASET_TYPE="all"
 # NAME_COLOR="GeoPIFu_color_2048_${DATASET_TYPE}_8"
 NAME="ICCV_GeoPIFu_coarse"
 NAME_QUERY="ICCV_GeoPIFu_query"
-NAME_COLOR="ICCV_GeoPIFu_color"
+NAME_COLOR="ICCV_GeoPIFu_color_embedder_correct_10"
 
 BATCH_SIZE=3
 COARSE_EPOCH=30
 QUERY_EPOCH=45
-COLOR_EPOCH=45
+COLOR_EPOCH=25
 
 SUBTRACTED_COARSE=$((COARSE_EPOCH-1))
 SUBTRACTED_QUERY=$((QUERY_EPOCH-1))
@@ -27,7 +27,7 @@ SUBTRACTED_COLOR=$((COLOR_EPOCH-1))
 netV_checkpoint="./checkpoints/${NAME}/netV_epoch_${SUBTRACTED_COARSE}_2899"
 netG_checkpoint="./checkpoints/${NAME_QUERY}/netG_epoch_${SUBTRACTED_QUERY}_2415"
 netC_checkpoint="./checkpoints/${NAME_COLOR}/netC_epoch_${SUBTRACTED_COLOR}_14495"
-netC_checkpoint="./checkpoints/${NAME_COLOR}/netC_epoch_11_14495"
+netC_checkpoint="./checkpoints/${NAME_COLOR}/netC_epoch_8_14495"
 
 GPU_ID=1
 
@@ -104,31 +104,32 @@ GPU_ID=1
 #       --deepVoxels_c_len 56 \
 #       --multiRanges_deepVoxels \
 #       --datasetType ${DATASET_TYPE}
-# python -m apps.train_color \
-#       --gpu_id ${GPU_ID} \
-#       --name ${NAME_COLOR} \
-#       --sigma 0.005 \
-#       --meshDirSearch ${MESH_DIR} \
-#       --datasetDir ${DATASET_DIR} \
-#       --batch_size 6 \
-#       --learning_rate 1e-4 \
-#       --num_epoch ${COLOR_EPOCH} \
-#       --schedule 8 23 40 \
-#       --num_sample_inout 0 \
-#       --num_sample_color 8000 \
-#       --freq_plot 1 \
-#       --freq_save 888 \
-#       --freq_save_ply 20 \
-#       --num_threads 8 \
-#       --load_netG_checkpoint_path ${netG_checkpoint} \
-#       --load_from_multi_GPU_shape \
-#       --deepVoxels_fusion early \
-#       --deepVoxels_c_len 56 \
-#       --multiRanges_deepVoxels \
-#       --random_multiview \
-#       --num_views 1 \
-#       --deepVoxelsDir ${RESULT_DIR}/${NAME}/train \
-#       --datasetType ${DATASET_TYPE} && \
+python -m apps.train_color \
+      --gpu_id ${GPU_ID} \
+      --name ${NAME_COLOR} \
+      --sigma 0.005 \
+      --meshDirSearch ${MESH_DIR} \
+      --datasetDir ${DATASET_DIR} \
+      --batch_size 6 \
+      --learning_rate 1e-4 \
+      --num_epoch ${COLOR_EPOCH} \
+      --schedule 8 23 40 \
+      --num_sample_inout 0 \
+      --num_sample_color 8000 \
+      --freq_plot 1 \
+      --freq_save 888 \
+      --freq_save_ply 888 \
+      --num_threads 8 \
+      --load_netG_checkpoint_path ${netG_checkpoint} \
+      --load_from_multi_GPU_shape \
+      --deepVoxels_fusion early \
+      --deepVoxels_c_len 56 \
+      --multiRanges_deepVoxels \
+      --random_multiview \
+      --num_views 1 \
+      --use_embedder \
+      --deepVoxelsDir ${RESULT_DIR}/${NAME}/train \
+      --datasetType ${DATASET_TYPE}
 # python -m apps.test_shape_iccv \
 #       --datasetDir ${DATASET_DIR} \
 #       --resultsDir ${RESULT_DIR}/${NAME_QUERY} \
@@ -155,20 +156,20 @@ GPU_ID=1
 #       --load_netG_checkpoint_path ${netG_checkpoint} \
 #       --load_netC_checkpoint_path ${netC_checkpoint} \
 #       --load_from_multi_GPU_shape \
-#       --datasetType ${DATASET_TYPE} && \
-source /home/tanjiale/miniconda3/bin/activate opendrEnv && \
-  cd .. && \
-  python main_eval_metrics_iccv.py \
-      --datasetDir ${DATASET_DIR} \
-      --resultsDir ${RESULT_DIR}/${NAME_COLOR} \
-      --datasetType ${DATASET_TYPE}
-  # python main_eval_prepare_iccv.py \
-  #     --compute_vn \
-  #     --datasetDir ${DATASET_DIR} \
-  #     --resultsDir ${RESULT_DIR}/${NAME_COLOR} \
-  #     --splitNum 12 \
-  #     --splitIdx 11 \
-  #     --gpu_id ${GPU_ID} \
-  #     --datasetType ${DATASET_TYPE}
+#       --datasetType ${DATASET_TYPE}
+# source /home/tanjiale/miniconda3/bin/activate opendrEnv && \
+#   cd .. && \
+#   python main_eval_prepare_iccv.py \
+#       --compute_vn \
+#       --datasetDir ${DATASET_DIR} \
+#       --resultsDir ${RESULT_DIR}/${NAME_COLOR} \
+#       --splitNum 12 \
+#       --splitIdx 0 \
+#       --gpu_id ${GPU_ID} \
+#       --datasetType ${DATASET_TYPE}
+#   python main_eval_metrics_iccv.py \
+#       --datasetDir ${DATASET_DIR} \
+#       --resultsDir ${RESULT_DIR}/${NAME_COLOR} \
+#       --datasetType ${DATASET_TYPE}
 
       # --load_from_multi_GPU_shape \

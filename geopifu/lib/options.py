@@ -64,6 +64,8 @@ class BaseOptions():
         g_ours.add_argument('--weight_3d_gan_gen', type=float, default="15.", help="weight for 3d-gan generator loss, to be comparable with the occupancy loss")
         g_ours.add_argument('--must_run_in_train_modes', type=str, default="ourDataShape_vrn_ce_6gpu_3dGAN,XXX", help='some models have to be run in train modes due to some hacky issues of BN layers')
         g_ours.add_argument('--num_skip_frames', type=int, default="1", help="num of frames to skip when generating visual demos")
+        g_ours.add_argument('--use_embedder', action='store_true', help='Use embedder for positional encoding')
+        g_ours.add_argument("--multires", type=int, default=10, help='log2 of max freq for positional encoding (3D location)')
 
         # Datasets related
         g_data = parser.add_argument_group('Data')
