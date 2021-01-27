@@ -27,10 +27,10 @@ from torch import nn
 # get options
 opt = BaseOptions().parse()
 
-def load_from_multi_GPU(path):
+def load_from_multi_GPU(path, map_location):
 
     # original saved file with DataParallel
-    state_dict = torch.load(path)
+    state_dict = torch.load(path, map_location=map_location)
 
     # create new OrderedDict that does not contain `module.`
     from collections import OrderedDict
@@ -46,9 +46,9 @@ def train(opt, visualCheck_0=False, visualCheck_1=False):
     # ----- init. -----
 
     # set GPU idx
+    if len(opt.gpu_ids) > 1: assert(torch.cuda.device_count() > 1)
     if len(opt.gpu_ids) > 1: os.environ["CUDA_VISIBLE_DEVICES"] = opt.gpu_ids
     cuda = torch.device('cuda') if len(opt.gpu_ids) > 1 else torch.device('cuda:%d' % opt.gpu_id)
-    if len(opt.gpu_ids) > 1: assert(torch.cuda.device_count() > 1)
 
     # make dir to save weights
     os.makedirs(opt.checkpoints_path, exist_ok=True) # exist_ok=True: will NOT make a new dir if already exist
@@ -101,7 +101,7 @@ def train(opt, visualCheck_0=False, visualCheck_1=False):
     if opt.load_netG_checkpoint_path is not None:
         print('loading for net G ...', opt.load_netG_checkpoint_path)
         assert(os.path.exists(opt.load_netG_checkpoint_path))
-        if opt.load_from_multi_GPU_shape    : netG.load_state_dict(load_from_multi_GPU(path=opt.load_netG_checkpoint_path), strict= not opt.partial_load)
+        if opt.load_from_multi_GPU_shape    : netG.load_state_dict(load_from_multi_GPU(path=opt.load_netG_checkpoint_path, map_location=cuda), strict= not opt.partial_load)
         if not opt.load_from_multi_GPU_shape: netG.load_state_dict(torch.load(opt.load_netG_checkpoint_path, map_location=cuda), strict=not opt.partial_load)
     else:
         print('Missing load_netG_checkpoint_path...')

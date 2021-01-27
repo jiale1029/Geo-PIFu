@@ -239,13 +239,13 @@ class Evaluator:
         print('On cuda: ', cuda)
 
         if opt.load_netG_checkpoint_path:
-            if self.opt.load_from_multi_GPU_shape    : netG.load_state_dict(self.load_from_multi_GPU(path=self.opt.load_netG_checkpoint_path))
+            if self.opt.load_from_multi_GPU_shape    : netG.load_state_dict(self.load_from_multi_GPU(path=self.opt.load_netG_checkpoint_path, map_location=cuda))
             if not self.opt.load_from_multi_GPU_shape: netG.load_state_dict(torch.load(self.opt.load_netG_checkpoint_path, map_location=cuda))
 
         if opt.load_netC_checkpoint_path is not None:
             print('loading for net C ...', opt.load_netC_checkpoint_path)
             netC = ResBlkPIFuNet(opt).to(device=cuda)
-            if self.opt.load_from_multi_GPU_color    : netC.load_state_dict(self.load_from_multi_GPU(path=self.opt.load_netC_checkpoint_path))
+            if self.opt.load_from_multi_GPU_color    : netC.load_state_dict(self.load_from_multi_GPU(path=self.opt.load_netC_checkpoint_path, map_location=cuda))
             if not self.opt.load_from_multi_GPU_color: netC.load_state_dict(torch.load(self.opt.load_netC_checkpoint_path, map_location=cuda))
         else:
             netC = None
@@ -265,10 +265,10 @@ class Evaluator:
             print("Model computation cost: parameter_size_C({}), flop_count({})...".format(parameter_size_C, flop_count))
 
 
-    def load_from_multi_GPU(self, path):
+    def load_from_multi_GPU(self, path, map_location):
 
         # original saved file with DataParallel
-        state_dict = torch.load(path)
+        state_dict = torch.load(path, map_location=map_location)
 
         # create new OrderedDict that does not contain `module.`
         from collections import OrderedDict
