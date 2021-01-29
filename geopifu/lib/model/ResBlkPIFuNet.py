@@ -21,7 +21,7 @@ def get_embedder(opt):
     
     embed_kwargs = {
         'include_input' : True,
-        'input_dims' : 3,
+        'input_dims' : 1,
         'max_freq_log2' : multires-1,
         'num_freqs' : multires,
         'log_sampling' : True,
@@ -36,7 +36,7 @@ class Embedder:
     def __init__(self, **kwargs):
         self.kwargs = kwargs
         self.create_embedding_fn()
-        
+
     def create_embedding_fn(self):
         embed_fns = []
         d = self.kwargs['input_dims']
@@ -44,23 +44,23 @@ class Embedder:
         if self.kwargs['include_input']:
             embed_fns.append(lambda x : x)
             out_dim += d
-            
+
         max_freq = self.kwargs['max_freq_log2']
         N_freqs = self.kwargs['num_freqs']
-        
+
         if self.kwargs['log_sampling']:
             freq_bands = 2.**torch.linspace(0., max_freq, steps=N_freqs)
         else:
             freq_bands = torch.linspace(2.**0., 2.**max_freq, steps=N_freqs)
-            
+
         for freq in freq_bands:
             for p_fn in self.kwargs['periodic_fns']:
                 embed_fns.append(lambda x, p_fn=p_fn, freq=freq : p_fn(x * freq))
                 out_dim += d
-                    
+
         self.embed_fns = embed_fns
         self.out_dim = out_dim
-        
+
     def embed(self, inputs):
         return torch.cat([fn(inputs) for fn in self.embed_fns], -1)
 
@@ -86,10 +86,13 @@ class ResBlkPIFuNet(BasePIFuNet):
         mlp_dim_color = self.opt.mlp_dim_color
         if opt.use_embedder:
             self.embedder, self.embedder_ch = get_embedder(opt)
-            # 512 + 63 = 576 concat image_feature + xyz
-            mlp_dim_color[0] += self.embedder_ch - 1
             # pdb.set_trace()
-        
+            # 512 + 63 = 576 concat image_feature + xyz
+            # mlp_dim_color[0] += self.embedder_ch - 1
+            # 513 + 21 = 534 concat image_feature + upscaled z + z_feat
+            mlp_dim_color[0] += self.embedder_ch
+            # pdb.set_trace()
+
         self.surface_classifier = SurfaceClassifier(
             filter_channels=mlp_dim_color, # default: 513, 1024, 512, 256, 128, 3
             num_views=self.opt.num_views,
@@ -131,7 +134,7 @@ class ResBlkPIFuNet(BasePIFuNet):
             calibs: (B * num_views, 4, 4) calibration matrix
             transforms: default is None
             labels: (B, 3, 5000), gt-RGB color, -1 ~ 1 float
-        
+
         Output
             self.pred: (B, 3, 5000) RGB predictions for each point, float -1 ~ 1
         '''
@@ -149,10 +152,12 @@ class ResBlkPIFuNet(BasePIFuNet):
 
         if self.opt.use_embedder:
             # use positional encoding
-            xyz = self.embedder.embed(torch.cat([xy, z_feat], 1).transpose(1,2)).transpose(1,2)
-            # pdb.set_trace()
             # [(B * num_views, 512, 5000), (B * num_view, 63, 5000)]
-            point_local_feat_list = [self.index(self.im_feat, xy), xyz]
+            # xyz = self.embedder.embed(torch.cat([xy, z_feat], 1).transpose(1,2)).transpose(1,2)
+            # point_local_feat_list = [self.index(self.im_feat, xy), xyz]
+            embed_z = self.embedder.embed(z_feat.transpose(1,2)).transpose(1,2)
+            # pdb.set_trace()
+            point_local_feat_list = [self.index(self.im_feat, xy), embed_z, z_feat]
         else:    
             # [(B * num_views, 512, 5000), (B * num_view, 1, 5000)]
             point_local_feat_list = [self.index(self.im_feat, xy), z_feat]

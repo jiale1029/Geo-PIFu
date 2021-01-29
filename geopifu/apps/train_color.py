@@ -167,7 +167,7 @@ def train(opt, visualCheck_0=False, visualCheck_1=False):
             image_tensor, calib_tensor = reshape_multiview_tensors(image_tensor, calib_tensor)        # (B * num_views, C, W, H)， (B * num_views, 4, 4)
             if opt.num_views > 1:
                 color_sample_tensor = reshape_sample_tensor(color_sample_tensor, opt.num_views) # (B * num_views, 3, n_in + n_out)
-            
+
             # use trained netG to extract image features
             # the last layer feature is then passed to netC
             with torch.no_grad():
