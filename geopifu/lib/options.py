@@ -66,6 +66,64 @@ class BaseOptions():
         g_ours.add_argument('--num_skip_frames', type=int, default="1", help="num of frames to skip when generating visual demos")
         g_ours.add_argument('--use_embedder', action='store_true', help='Use embedder for positional encoding')
         g_ours.add_argument("--multires", type=int, default=10, help='log2 of max freq for positional encoding (3D location)')
+        g_ours.add_argument("--embedder_input_dim", type=int, default=3, help='1 or 2 or 3')
+
+        # pix2pixHD related
+        g_ours.add_argument('--use_pix2pix', action='store_true', help='Use pix2pixHD for back view inference')
+        g_ours.add_argument('--isTrain', action='store_true', help="This is for joint training (not implemented)")
+        g_ours.add_argument('--model', type=str, default='pix2pixHD', help='which model to use for pix2pix')
+        g_ours.add_argument('--resize_or_crop', type=str, default='scale_width', help='scaling and cropping of images at load time [resize_and_crop|crop|scale_width|scale_width_and_crop]')
+        g_ours.add_argument('--norm_pix2pix', type=str, default='instance', help='instance normalization or batch normalization')        
+        g_ours.add_argument('--use_dropout', action='store_true', help='use dropout for the generator')
+        g_ours.add_argument('--data_type', default=32, type=int, choices=[8, 16, 32], help="Supported data type i.e. 8, 16, 32 bit")
+        g_ours.add_argument('--verbose', action='store_true', default=False, help='toggles verbose')
+        g_ours.add_argument('--fp16', action='store_true', default=False, help='train with AMP')
+        g_ours.add_argument('--local_rank', type=int, default=0, help='local rank for distributed training')
+
+        # for training
+        g_ours.add_argument('--checkpoints_dir', type=str, default='', help='Checkpoint for saving')
+        g_ours.add_argument('--load_pretrain', type=str, default='', help='load the pretrained model from the specified location')
+        g_ours.add_argument('--which_epoch', type=str, default='latest', help='which epoch to load? set to latest to use latest cached model')
+        g_ours.add_argument('--phase', type=str, default='train', help='train, val, test, etc')
+        g_ours.add_argument('--niter', type=int, default=20, help='# of iter at starting learning rate')
+        g_ours.add_argument('--niter_decay', type=int, default=100, help='# of iter to linearly decay learning rate to zero')
+        g_ours.add_argument('--beta1', type=float, default=0.5, help='momentum term of adam')
+
+        #input/output sizes
+        # g_ours.add_argument('--loadSize', type=int, default=512, help='scale images to this size')
+        g_ours.add_argument('--fineSize', type=int, default=512, help='then crop to this size')
+        g_ours.add_argument('--label_nc', type=int, default=35, help='# of input label channels')
+        g_ours.add_argument('--input_nc', type=int, default=3, help='# of input image channels')
+        g_ours.add_argument('--output_nc', type=int, default=3, help='# of output image channels')
+
+        # for generator
+        g_ours.add_argument('--netG', type=str, default='global', help='selects model to use for netG')
+        g_ours.add_argument('--ngf', type=int, default=64, help='# of gen filters in first conv layer')
+        g_ours.add_argument('--n_downsample_global', type=int, default=4, help='number of downsampling layers in netG') 
+        g_ours.add_argument('--n_blocks_global', type=int, default=9, help='number of residual blocks in the global generator network')
+        g_ours.add_argument('--n_blocks_local', type=int, default=3, help='number of residual blocks in the local enhancer network')
+        g_ours.add_argument('--n_local_enhancers', type=int, default=1, help='number of local enhancers to use')        
+        g_ours.add_argument('--niter_fix_global', type=int, default=0, help='number of epochs that we only train the outmost local enhancer')        
+
+        # for instance-wise features
+        g_ours.add_argument('--no_instance', action='store_true', help='if specified, do *not* add instance map as input')        
+        g_ours.add_argument('--instance_feat', action='store_true', help='if specified, add encoded instance features as input')
+        g_ours.add_argument('--label_feat', action='store_true', help='if specified, add encoded label features as input')        
+        g_ours.add_argument('--feat_num', type=int, default=3, help='vector length for encoded features')        
+        g_ours.add_argument('--load_features', action='store_true', help='if specified, load precomputed feature maps')
+        g_ours.add_argument('--n_downsample_E', type=int, default=4, help='# of downsampling layers in encoder') 
+        g_ours.add_argument('--nef', type=int, default=16, help='# of encoder filters in the first conv layer')        
+        g_ours.add_argument('--n_clusters', type=int, default=10, help='number of clusters for features')        
+
+        # for discriminators        
+        g_ours.add_argument('--num_D', type=int, default=2, help='number of discriminators to use')
+        g_ours.add_argument('--n_layers_D', type=int, default=3, help='only used if which_model_netD==n_layers')
+        g_ours.add_argument('--ndf', type=int, default=64, help='# of discrim filters in first conv layer')    
+        g_ours.add_argument('--lambda_feat', type=float, default=10.0, help='weight for feature matching loss')                
+        g_ours.add_argument('--no_ganFeat_loss', action='store_true', help='if specified, do *not* use discriminator feature matching loss')
+        g_ours.add_argument('--no_vgg_loss', action='store_true', help='if specified, do *not* use VGG feature matching loss')        
+        g_ours.add_argument('--no_lsgan', action='store_true', help='do *not* use least square GAN, if false, use vanilla GAN')
+        g_ours.add_argument('--pool_size', type=int, default=0, help='the size of image buffer that stores previously generated images')
 
         # Datasets related
         g_data = parser.add_argument_group('Data')

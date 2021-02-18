@@ -6,7 +6,11 @@ import functools
 from .SurfaceClassifier import SurfaceClassifier
 from .DepthNormalizer import DepthNormalizer
 from ..net_util import *
+from .pix2pixHD.models.models import create_model
+from .pix2pixHD.models.pix2pixHD_model import Pix2PixHDModel
+from .pix2pixHD.util import util
 import pdb
+import cv2
 
 def get_embedder(opt):
     """
@@ -21,7 +25,7 @@ def get_embedder(opt):
     
     embed_kwargs = {
         'include_input' : True,
-        'input_dims' : 1,
+        'input_dims' : opt.embedder_input_dim,
         'max_freq_log2' : multires-1,
         'num_freqs' : multires,
         'log_sampling' : True,
@@ -81,18 +85,21 @@ class ResBlkPIFuNet(BasePIFuNet):
         self.opt = opt
 
         norm_type = get_norm_layer(norm_type=opt.norm_color) # default: nn.InstanceNorm2d without {affine, tracked statistics}
-        self.image_filter = ResnetFilter(opt, norm_layer=norm_type)
+        self.image_filter = ResnetFilter(opt, norm_layer=norm_type) # input image filter
 
         mlp_dim_color = self.opt.mlp_dim_color
         if opt.use_embedder:
             self.embedder, self.embedder_ch = get_embedder(opt)
             # pdb.set_trace()
             # 512 + 63 = 576 concat image_feature + xyz
-            # mlp_dim_color[0] += self.embedder_ch - 1
+            mlp_dim_color[0] += self.embedder_ch - 1
             # 513 + 21 = 534 concat image_feature + upscaled z + z_feat
-            mlp_dim_color[0] += self.embedder_ch
+            # mlp_dim_color[0] += self.embedder_ch
             # pdb.set_trace()
 
+        if opt.use_pix2pix:
+            mlp_dim_color[0] += 256
+         
         self.surface_classifier = SurfaceClassifier(
             filter_channels=mlp_dim_color, # default: 513, 1024, 512, 256, 128, 3
             num_views=self.opt.num_views,
@@ -102,10 +109,17 @@ class ResBlkPIFuNet(BasePIFuNet):
 
         self.normalizer = DepthNormalizer(opt)
 
-            # pdb.set_trace()
-
         # weights initialization for conv, fc, batchNorm layers
         init_net(self)
+
+        # use pix2pix for back view inference (don't init this)
+        if opt.use_pix2pix:
+            print("Using pix2pix for back view inference...")
+            # create the back view inference model
+            self.pix2pixHD = create_model(opt) # output (3,512,512)
+            # create an extra image filter? or share the same image filter?
+            self.image_filter_back = ResnetFilter(opt, norm_layer=norm_type)
+            # pdb.set_trace()
 
     def filter(self, images):
         '''
@@ -116,13 +130,22 @@ class ResBlkPIFuNet(BasePIFuNet):
 
         output:
             self.im_feat: (BV, 256, 128, 128)
+            and
+            self.im_feat_back: (BV, 256, 128, 128)
         '''
 
         self.im_feat = self.image_filter(images)
 
+        if self.image_filter_back:
+            self.im_feat_back = self.image_filter_back(self.image_back)
+
     def attach(self, im_feat):
 
-        self.im_feat = torch.cat([im_feat, self.im_feat], 1)
+        if self.image_filter_back:
+            # (BV*num_views, 768, 128, 128)
+            self.im_feat = torch.cat([im_feat, self.im_feat, self.im_feat_back], 1)
+        else:
+            self.im_feat = torch.cat([im_feat, self.im_feat], 1)
 
     def query(self, points, calibs, transforms=None, labels=None):
         '''
@@ -152,21 +175,34 @@ class ResBlkPIFuNet(BasePIFuNet):
 
         if self.opt.use_embedder:
             # use positional encoding
-            # [(B * num_views, 512, 5000), (B * num_view, 63, 5000)]
-            # xyz = self.embedder.embed(torch.cat([xy, z_feat], 1).transpose(1,2)).transpose(1,2)
-            # point_local_feat_list = [self.index(self.im_feat, xy), xyz]
-            embed_z = self.embedder.embed(z_feat.transpose(1,2)).transpose(1,2)
-            # pdb.set_trace()
-            point_local_feat_list = [self.index(self.im_feat, xy), embed_z, z_feat]
+            xyz = self.embedder.embed(torch.cat([xy, z_feat], 1).transpose(1,2)).transpose(1,2)
+            point_local_feat_list = [self.index(self.im_feat, xy), xyz]                   # [(B * num_views, 512, 5000), (B * num_view, 63, 5000)]
+            # embed_z = self.embedder.embed(z_feat.transpose(1,2)).transpose(1,2)
+            # point_local_feat_list = [self.index(self.im_feat, xy), embed_z, z_feat]     # [(B*num_views, 512, 8000), (B*num_view, 32, 8000)]
         else:    
             # [(B * num_views, 512, 5000), (B * num_view, 1, 5000)]
             point_local_feat_list = [self.index(self.im_feat, xy), z_feat]
 
-        # (B * num_views, 512+1, 5000) or (B * num_views, 512+63, 5000)
+        # (B * num_views, 512+1, 5000) or (B * num_views, 512+63, 5000) or (B*num_views, 768+1 or +63, 5000)
         point_local_feat = torch.cat(point_local_feat_list, 1)
 
         # (B, 3, 5000), num_views are canceled out by mean pooling, float -1 ~ 1. RGB rolor
         self.preds = self.surface_classifier(point_local_feat)
+
+    def infer_back(self, images):
+        """
+        input
+            images: (BV, 3, 512, 512)
+        output
+            image_back: (BV, 3, 512, 512)
+        """
+    
+        self.image_back = self.pix2pixHD.inference(images, torch.Tensor(0), torch.Tensor(0))
+
+        # cv2.imwrite('input_img.jpg', cv2.cvtColor(util.tensor2im(images.data[0]), cv2.COLOR_RGB2BGR))
+        # cv2.imwrite('synthesized_img.jpg', cv2.cvtColor(util.tensor2im(self.image_back[0]), cv2.COLOR_RGB2BGR))
+
+        # pdb.set_trace()
 
     def forward(self, images, im_feat, points, calibs, transforms=None, labels=None):
         """
@@ -175,11 +211,14 @@ class ResBlkPIFuNet(BasePIFuNet):
             im_feat: (BV, 256, 128, 128) from the stacked-hour-glass filter
         """
 
+        if self.image_filter_back:
+            self.infer_back(images) # infer the back image using input image (BV, 3, 512, 512)
+
         # extract self.im_feat, (BV, 256, 128, 128), not the input im_feat
         self.filter(images)
 
         # concat the input im_feat with self.im_feat and get the new self.im_feat: (BV, 512, 128, 128)
-        self.attach(im_feat)
+        self.attach(im_feat) # (BV, 512, 128, 128) or (BV, 768, 128, 128) if using back view inference
 
         # extract self.preds: (B, 3, 5000), num_views are canceled out by mean pooling, float -1 ~ 1. RGB rolor
         self.query(points, calibs, transforms, labels)

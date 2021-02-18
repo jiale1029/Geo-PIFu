@@ -149,10 +149,10 @@ def train(opt, visualCheck_0=False, visualCheck_1=False):
                 print("Debug: verify that img input is rgb...")
                 img_BGR = ((np.transpose(image_tensor[0,0].detach().cpu().numpy(), (1, 2, 0)) * 0.5 + 0.5)*255.).astype(np.uint8)[:,:,::-1] # RGB to BGR, (512,512,3), [0, 255]
                 img_RGB = img_BGR[:,:,::-1]
-                pdb.set_trace()
                 os.makedirs("./sample_images", exist_ok=True)
                 cv2.imwrite("./sample_images/%s_img_input_by_cv2.png"%(opt.name), img_BGR)          # cv2 save BGR-array into proper-color.png
                 Image.fromarray(img_RGB).save("./sample_images/%s_img_input_by_PIL.png"%(opt.name)) # PIL save RGB-array into proper-color.png
+                pdb.set_trace()
             if visualCheck_1:
                 print("Debug: verify that sampled color points is reasonable")
                 save_path = '%s/%s/data_col_%d_%d.ply' % (opt.results_path, opt.name, epoch, train_idx)
