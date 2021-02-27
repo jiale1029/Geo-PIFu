@@ -15,6 +15,7 @@ from lib.mesh_util import *
 from lib.sample_util import *
 from lib.train_util import *
 from lib.model import *
+from lib.model.pix2pixHD.models.models import create_model
 
 from PIL import Image
 import torchvision.transforms as transforms
@@ -238,6 +239,14 @@ class Evaluator:
         print('Using Network: ', netG.name)
         print('On cuda: ', cuda)
 
+        # use pix2pixHD for back view inference
+        net_pix2pixHD = None
+        if opt.use_pix2pix:
+            print("Using pix2pixHD for back view inferencing...")
+            net_pix2pixHD = create_model(opt) # output (3,512,512)
+            if len(opt.gpu_ids) > 1: net_pix2pixHD = nn.DataParallel(net_pix2pixHD)
+            net_pix2pixHD.to(cuda)
+
         if opt.load_netG_checkpoint_path:
             if self.opt.load_from_multi_GPU_shape    : netG.load_state_dict(self.load_from_multi_GPU(path=self.opt.load_netG_checkpoint_path, map_location=cuda))
             if not self.opt.load_from_multi_GPU_shape: netG.load_state_dict(torch.load(self.opt.load_netG_checkpoint_path, map_location=cuda))
@@ -253,6 +262,7 @@ class Evaluator:
         self.cuda = cuda
         self.netG = netG
         self.netC = netC
+        self.net_pix2pixHD = net_pix2pixHD
 
         # show parameter sizes and FLOP count
         parameter_size_G = sum([param.nelement() for param in netG.parameters()])
@@ -263,6 +273,11 @@ class Evaluator:
             parameter_size_C = sum([param.nelement() for param in netC.parameters()])
             flop_count       = 0.
             print("Model computation cost: parameter_size_C({}), flop_count({})...".format(parameter_size_C, flop_count))
+
+        if net_pix2pixHD:
+            parameter_size_pix2pix = sum([param.nelement() for param in net_pix2pixHD.parameters()])
+            flop_count       = 0.
+            print("Model computation cost: parameter_size_pix2pix({}), flop_count({})...".format(parameter_size_pix2pix, flop_count))
 
 
     def load_from_multi_GPU(self, path, map_location):
@@ -383,7 +398,7 @@ class Evaluator:
             
             # generate and save the mesh
             if self.netC:
-                gen_mesh_color_iccv(opt, self.netG, self.netC, self.cuda, data, save_path, use_octree=use_octree)
+                gen_mesh_color_iccv(opt, self.netG, self.netC, self.cuda, data, save_path, use_octree=use_octree, net_pix2pixHD=self.net_pix2pixHD)
             else:
                 gen_mesh_iccv(opt, self.netG, self.cuda, data, save_path, use_octree=use_octree)
 
@@ -452,20 +467,20 @@ def main(args):
         print("Exp %s, GPU-%d, split-%02d/%02d | inference: %06d-%06d-%06d | remains %.3f m(s) ......" % (expName,args.gpu_id,args.splitIdx,args.splitNum,frameIdx[0],frameIdx[1],frameIdx[2],minsRemain))
 
         # visual sanity check
-        if visual_demo_flag:
+        # if visual_demo_flag:
 
-            # create dirs for saving demos
-            if args.name != "example":
-                demo_dir = "./sample_images_%s/" % (args.name)
-            else:
-                demo_dir = "./sample_images/" 
-            if not os.path.exists(demo_dir): os.makedirs(demo_dir)
+        #     # create dirs for saving demos
+        #     if args.name != "example":
+        #         demo_dir = "./sample_images_%s/" % (args.name)
+        #     else:
+        #         demo_dir = "./sample_images/" 
+        #     if not os.path.exists(demo_dir): os.makedirs(demo_dir)
 
-            print("saving demo for visualCheck...")
-            os.system("cp %s %s" % (save_path_png, demo_dir))
-            os.system("cp %s %s" % (save_path_obj, demo_dir))
-            gtMesh = read_and_canonize_gt_mesh(preFix=frameIdx[1],args=args,withTexture=True)
-            ObjIO.save_obj_data_color(gtMesh, "%s%06d_meshGT.obj" % (demo_dir, frameIdx[1]))
+        #     print("saving demo for visualCheck...")
+        #     os.system("cp %s %s" % (save_path_png, demo_dir))
+        #     os.system("cp %s %s" % (save_path_obj, demo_dir))
+        #     gtMesh = read_and_canonize_gt_mesh(preFix=frameIdx[1],args=args,withTexture=True)
+        #     ObjIO.save_obj_data_color(gtMesh, "%s%06d_meshGT.obj" % (demo_dir, frameIdx[1]))
 
 if __name__ == '__main__':
 

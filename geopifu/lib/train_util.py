@@ -12,7 +12,7 @@ import pdb # pdb.set_trace()
 import glob
 
 def get_training_test_indices(args, shuffle):
-
+    
     if args.datasetType == "mini":
         print("Using the first 1024 data for sanity check purpose for fast convergence...")
         # using 0.5% of dataset for sanity check
@@ -329,7 +329,7 @@ def gen_mesh(opt, net, cuda, data, save_path, use_octree=True):
         print('Can not create marching cubes at this time.')
 
 # generate est-color-mesh for a data point (can be multi-view input)
-def gen_mesh_color_iccv(opt, netG, netC, cuda, data, save_path, use_octree=True):
+def gen_mesh_color_iccv(opt, netG, netC, cuda, data, save_path, use_octree=True, net_pix2pixHD=None):
 
     image_tensor = data['img'].to(device=cuda)   # (num_views, 3, 512, 512)
     calib_tensor = data['calib'].to(device=cuda) # (num_views, 4, 4)
@@ -338,6 +338,14 @@ def gen_mesh_color_iccv(opt, netG, netC, cuda, data, save_path, use_octree=True)
 
     # use hour-glass networks to extract image features
     netG.filter(image_tensor)
+    if opt.use_pix2pix:
+        with torch.no_grad():
+            netC.image_back = net_pix2pixHD.inference(image_tensor, torch.Tensor(0), torch.Tensor(0))
+        back_image_path = save_path.replace(".obj", "_synthesized_back.png")
+        # print("Saving back image:", back_image_path)
+        reshaped_back_image = netC.image_back.view(netC.image_back.shape[0], -1, netC.image_back.shape[-3], netC.image_back.shape[-2], netC.image_back.shape[-1]) # (B==2, num_views, C, W, H)
+        back_img_BGR = ((np.transpose(reshaped_back_image[0,0].detach().cpu().numpy(), (1, 2, 0)) * 0.5 + 0.5)*255.).astype(np.uint8)[:,:,::-1] # RGB to BGR, (512,512,3), [0, 255]
+        cv2.imwrite(back_image_path, back_img_BGR)          # cv2 save BGR-array into proper-color.png
     netC.filter(image_tensor)
     netC.attach(netG.get_im_feat())
 
@@ -580,7 +588,7 @@ def calc_error(opt, net, cuda, dataset, num_tests):
 
     return np.average(erorr_arr), np.average(IOU_arr), np.average(prec_arr), np.average(recall_arr)
 
-def calc_error_color(opt, netG, netC, cuda, dataset, num_tests):
+def calc_error_color(opt, netG, netC, cuda, dataset, num_tests, net_pix2pixHD=None):
     if num_tests > len(dataset):
         num_tests = len(dataset)
     with torch.no_grad():
@@ -596,9 +604,14 @@ def calc_error_color(opt, netG, netC, cuda, dataset, num_tests):
                 color_sample_tensor = reshape_sample_tensor(color_sample_tensor, opt.num_views)
             rgb_tensor          = data['rgbs'].to(device=cuda).unsqueeze(0)
 
+            back_image_tensor = None
+            if opt.use_pix2pix:
+                with torch.no_grad():
+                    back_image_tensor = net_pix2pixHD.inference(image_tensor, torch.Tensor(0), torch.Tensor(0))
+
             # forward pass
             netG.filter(image_tensor)
-            _, errorC = netC.forward(image_tensor, netG.get_im_feat(), color_sample_tensor, calib_tensor, labels=rgb_tensor)
+            _, errorC = netC.forward(image_tensor, netG.get_im_feat(), color_sample_tensor, calib_tensor, labels=rgb_tensor, back_images=back_image_tensor)
 
             # print('{0}/{1} | Error inout: {2:06f} | Error color: {3:06f}'
             #       .format(idx, num_tests, errorG.item(), errorC.item()))

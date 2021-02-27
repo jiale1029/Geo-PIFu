@@ -20,6 +20,7 @@ from lib.train_util import *
 from lib.data import *
 from lib.model import *
 from lib.geometry import index
+from lib.model.pix2pixHD.models.models import create_model
 
 import pdb # pdb.set_trace()
 from torch import nn
@@ -87,6 +88,14 @@ def train(opt, visualCheck_0=False, visualCheck_1=False):
     if len(opt.gpu_ids) > 1: netG = nn.DataParallel(netG)
     netG.to(cuda)
 
+    # use pix2pixHD for back view inference
+    net_pix2pixHD = None
+    if opt.use_pix2pix:
+        print("Using pix2pixHD for back view inferencing...")
+        net_pix2pixHD = create_model(opt) # output (3,512,512)
+        if len(opt.gpu_ids) > 1: net_pix2pixHD = nn.DataParallel(net_pix2pixHD)
+        net_pix2pixHD.to(cuda)
+
     # Always use resnet for color regression
     netC = ResBlkPIFuNet(opt)
     print('Using Network for Color: ', netC.name)
@@ -109,8 +118,21 @@ def train(opt, visualCheck_0=False, visualCheck_1=False):
 
     # load mid-training weights 
     if opt.continue_train:
-        model_path = '%s/%s/netC_epoch_%d_%d' % (opt.checkpoints_path, opt.resume_name, opt.resume_epoch, opt.resume_iter)
-        print('Resuming from ', model_path)
+        if opt.resume_epoch == -1 and opt.resume_iter == -1:
+            model_path = './checkpoints/%s/netC_latest' % (opt.name)
+            iter_path = "./checkpoints/%s/iter.txt" %(opt.name)
+            assert(iter_path)
+            try:
+                start_epoch, epoch_iter = np.loadtxt(iter_path , delimiter=',', dtype=int)
+            except:
+                start_epoch, epoch_iter = 1, 0
+
+            opt.resume_epoch = start_epoch
+            opt.resume_iter = epoch_iter
+        else:
+            model_path = './checkpoints/%s/netC_epoch_%d_%d' % (opt.checkpoints_path, opt.name, opt.resume_epoch, opt.resume_iter)
+        print('Resuming from :', model_path)
+        print('Epoch: %d, Iter: %d' % (opt.resume_epoch, opt.resume_iter))
         assert(os.path.exists(model_path))
         netC.load_state_dict(torch.load(model_path, map_location=cuda))
 
@@ -121,7 +143,7 @@ def train(opt, visualCheck_0=False, visualCheck_1=False):
     # ----- enter the training loop -----
 
     print("entering the training loop...")
-    start_epoch = 0 if not opt.continue_train else max(opt.resume_epoch+1,0) # usually: 0
+    start_epoch = 0 if not opt.continue_train else opt.resume_epoch # usually: 0
     for epoch in range(start_epoch, opt.num_epoch):
         netC.train() # set to training mode (e.g. enable dropout, BN update)
         epoch_start_time = time.time()
@@ -172,10 +194,15 @@ def train(opt, visualCheck_0=False, visualCheck_1=False):
             # the last layer feature is then passed to netC
             with torch.no_grad():
                 netG.filter(image_tensor)
+
+            back_image_tensor = None
+            if opt.use_pix2pix:
+                with torch.no_grad():
+                    back_image_tensor = net_pix2pixHD.inference(image_tensor, torch.Tensor(0), torch.Tensor(0))
+                
             # network forward pass
             res, error = netC.forward(
-                images=image_tensor, im_feat=netG.get_im_feat(), points=color_sample_tensor, calibs=calib_tensor, labels=rgb_tensor
-                # , deepVoxels=deepVoxels_tensor
+                images=image_tensor, im_feat=netG.get_im_feat(), points=color_sample_tensor, calibs=calib_tensor, labels=rgb_tensor, back_images=back_image_tensor
             ) # (B, 1, 5000), R
 
             # compute gradients and update weights
@@ -201,8 +228,10 @@ def train(opt, visualCheck_0=False, visualCheck_1=False):
 
             # save weights for every opt.freq_save iters, 50 iters
             if (train_idx == len(train_data_loader)-1) or (train_idx % opt.freq_save == 0 and train_idx != 0):
-                # torch.save(netG.state_dict(), '%s/%s/netG_latest'   % (opt.checkpoints_path, opt.name))
-                torch.save(netC.state_dict(), '%s/%s/netC_epoch_%d_%d' % (opt.checkpoints_path, opt.name, epoch, train_idx))
+                torch.save(netC.state_dict(), './checkpoints/%s/netC_epoch_%d_%d' % (opt.name, epoch, train_idx))
+                torch.save(netC.state_dict(), './checkpoints/%s/netC_latest' % (opt.name))
+                np.savetxt("./checkpoints/%s/iter.txt" % (opt.name), (epoch, train_idx), delimiter=',', fmt='%d')
+                    
 
             # save query points into .ply (red-inside, green-outside) for every opt.freq_save_ply iters, 100 iters
             if (train_idx == len(train_data_loader)-1) or (train_idx % opt.freq_save_ply) == 0:
@@ -217,6 +246,11 @@ def train(opt, visualCheck_0=False, visualCheck_1=False):
                 image_tensor_reshaped = image_tensor.view(image_tensor.shape[0], -1, image_tensor.shape[-3], image_tensor.shape[-2], image_tensor.shape[-1]) # (B==2, num_views, C, W, H)
                 img_BGR = ((np.transpose(image_tensor_reshaped[0,0].detach().cpu().numpy(), (1, 2, 0)) * 0.5 + 0.5)*255.).astype(np.uint8)[:,:,::-1] # RGB to BGR, (512,512,3), [0, 255]
                 cv2.imwrite(save_path, img_BGR)          # cv2 save BGR-array into proper-color.png
+
+                save_path = '%s/%s/pred_back_%d_%d.png' % (opt.results_path, opt.name, epoch, train_idx)
+                back_image_tensor_reshaped = back_image_tensor.view(back_image_tensor.shape[0], -1, back_image_tensor.shape[-3], back_image_tensor.shape[-2], back_image_tensor.shape[-1]) # (B==2, num_views, C, W, H)
+                back_img_BGR = ((np.transpose(back_image_tensor_reshaped[0,0].detach().cpu().numpy(), (1, 2, 0)) * 0.5 + 0.5)*255.).astype(np.uint8)[:,:,::-1] # RGB to BGR, (512,512,3), [0, 255]
+                cv2.imwrite(save_path, back_img_BGR)          # cv2 save BGR-array into proper-color.png
 
             # for recording dataloading time
             iter_data_time = time.time()
@@ -243,14 +277,14 @@ def train(opt, visualCheck_0=False, visualCheck_1=False):
 
                 # compute metrics for 100 test frames
                 print('calc error (test) ...')
-                test_errors = calc_error_color(opt, netG, netC, cuda, test_dataset, num_tests=50) # avg. {error, IoU, precision, recall} computed among 100 frames, each frame has e.g. 5000 query points for evaluation.
+                test_errors = calc_error_color(opt, netG, netC, cuda, test_dataset, num_tests=50, net_pix2pixHD=net_pix2pixHD) # avg. {error, IoU, precision, recall} computed among 100 frames, each frame has e.g. 5000 query points for evaluation.
                 text_show_0 = 'Epoch-{} | eval test MSE: {:06f} '.format(epoch, test_errors)
                 print(text_show_0)
 
                 # compute metrics for 100 train frames
                 print('calc error (train) ...')
                 train_dataset.allow_aug = False # switch-off training data aug.
-                train_errors = calc_error_color(opt, netG, netC, cuda, train_dataset, num_tests=50)
+                train_errors = calc_error_color(opt, netG, netC, cuda, train_dataset, num_tests=50, net_pix2pixHD=net_pix2pixHD)
                 train_dataset.allow_aug = True  # switch-on  training data aug.
                 text_show_1 = 'Epoch-{} | eval train MSE: {:06f} '.format(epoch, train_errors)
                 print(text_show_1)
@@ -266,7 +300,7 @@ def train(opt, visualCheck_0=False, visualCheck_1=False):
                 for gen_idx in tqdm(range(opt.num_gen_mesh_test)):
                     test_data = random.choice(test_dataset) # get a random item from all the test items
                     save_path = '%s/%s/test_eval_epoch%d_%d_%s.obj' % (opt.results_path, opt.name, epoch, test_data["index"], test_data['name'])
-                    gen_mesh_color_iccv(opt, netG.module if len(opt.gpu_ids)>1 else netG, netC.module if len(opt.gpu_ids)>1 else netC, cuda, test_data, save_path)
+                    gen_mesh_color_iccv(opt, netG.module if len(opt.gpu_ids)>1 else netG, netC.module if len(opt.gpu_ids)>1 else netC, cuda, test_data, save_path, net_pix2pixHD=net_pix2pixHD.module if len(opt.gpu_ids)>1 else net_pix2pixHD)
 
                 # generate meshes for opt.num_gen_mesh_test train frames
                 print('generate mesh (train) ...')
@@ -274,7 +308,7 @@ def train(opt, visualCheck_0=False, visualCheck_1=False):
                 for gen_idx in tqdm(range(opt.num_gen_mesh_test)):
                     train_data = random.choice(train_dataset) # get a random item from all the test items
                     save_path = '%s/%s/train_eval_epoch%d_%d_%s.obj' % (opt.results_path, opt.name, epoch, train_data["index"], train_data['name'])
-                    gen_mesh_color_iccv(opt, netG.module if len(opt.gpu_ids)>1 else netG, netC.module if len(opt.gpu_ids)>1 else netC, cuda, train_data, save_path)
+                    gen_mesh_color_iccv(opt, netG.module if len(opt.gpu_ids)>1 else netG, netC.module if len(opt.gpu_ids)>1 else netC, cuda, train_data, save_path, net_pix2pixHD=net_pix2pixHD.module if len(opt.gpu_ids)>1 else net_pix2pixHD)
                 train_dataset.allow_aug = True  # switch-on  training data aug.
 
 if __name__ == '__main__':
