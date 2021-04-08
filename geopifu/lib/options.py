@@ -223,6 +223,7 @@ class BaseOptions():
         parser.add_argument('--gen_test_mesh', action='store_true', help='generate test mesh')
         parser.add_argument('--gen_train_mesh', action='store_true', help='generate train mesh')
         parser.add_argument('--all_mesh', action='store_true', help='generate meshs from all hourglass output')
+        parser.add_argument('--startIndex', type=int, default=0)
         parser.add_argument('--num_gen_mesh_test', type=int, default=1,
                             help='how many meshes to generate during testing')
 
@@ -237,6 +238,8 @@ class BaseOptions():
         # for single image reconstruction
         parser.add_argument('--mask_path', type=str, help='path for input mask')
         parser.add_argument('--img_path', type=str, help='path for input image')
+        parser.add_argument('--deepVoxelPath', type=str, help='path for deep voxel')
+        parser.add_argument('--mesh_name', type=str, help='name')
 
         # aug
         group_aug = parser.add_argument_group('aug')

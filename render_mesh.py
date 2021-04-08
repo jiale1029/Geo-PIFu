@@ -1,5 +1,6 @@
 import os
 import numpy as np
+from PIL import Image
 from opendr.camera import ProjectPoints
 # from opendr.renderer import ColoredRenderer
 from MyCamera import ProjectPointsOrthogonal
@@ -49,8 +50,9 @@ SUPPORTED_ADDITIONAL_TYPES = ["smplSemVoxels"]
 
 class render_mesh(object):
 
-    def __init__(self,w=128*2,h=192*2,f=5000.,near=0.5,far=25,saveDir=None,meshNormMargin=0.15):
+    def __init__(self,args,w=128*2,h=192*2,f=5000.,near=0.5,far=25,saveDir=None,meshNormMargin=0.15):
         
+        self.args = args
         self.meshNormMargin = meshNormMargin # margin when normalizing mesh into H [-0.5,0.5]*(1-margin), W/D [-0.333,0.333]*(1-margin)
         self.threshH = H_NORMALIZE_HALF * (1-self.meshNormMargin)
         self.threshWD = H_NORMALIZE_HALF * VOXEL_W/VOXEL_H * (1-self.meshNormMargin)
@@ -100,6 +102,7 @@ class render_mesh(object):
         self.saveDir = saveDir
 
         self.quickDemo = None
+        self.metrics = None
         self.eachMeshWithBgNum = None
         self.newMeshToRead = None
 
@@ -113,6 +116,7 @@ class render_mesh(object):
         self.meshPath = None
         self.bgImgPath = None
         self.dataPrefix = None
+        self.mesh_name = None
         self.randomRot = None # for each mesh, we add a random (3,3) rotation matrix
         self.skyLightRotDegrees = [-60, 60, 180] # Sky: {left,right,back} lightings
 
@@ -221,6 +225,144 @@ class render_mesh(object):
 
         #----- LEFT view rendering -----
         self.start_rendering(accuRotDegree=-90, info="LEFT", dataPrefix=dataPrefix, meshPath=meshPath)
+
+    def render_colored_gt_mesh_without_bg(self, loadedConfig, metrics=True):
+
+        self.loadedConfig = loadedConfig
+        self.meshPath = loadedConfig["meshPath"]
+        self.metrics = metrics
+        self.newMeshToRead = True
+
+        # init render
+        self.rn = ColoredRenderer()
+
+        # set cam
+        self.rn.camera = self.init_cam(w=self.w,
+                                       h=self.h,
+                                       rt=np.array([0,0,0]),
+                                       t=np.array([0,0,2]),
+                                       f=self.f)
+
+        # set rendering frustum region
+        self.rn.frustum = {'near': self.near,
+                           'far': self.far,
+                           'height': self.h,
+                           'width': self.w}
+
+        # set background image
+        self.rn.background_image = np.ones((self.h, self.w, 3))
+
+        self.set_v_f_vc_bgcolor(meshPath=self.meshPath)
+
+        self.set_sky_lighting_directions()
+
+        print("dataPrefix %d" %self.dataPrefix)
+        if self.dataPrefix%4 == 1:
+            accuRotDegree = -90
+        elif self.dataPrefix%4 == 2:
+            accuRotDegree = -180
+        elif self.dataPrefix%4 == 3:
+            accuRotDegree = -270
+        else:
+            accuRotDegree = 0
+    
+        print("pre-rotating %d degrees" %accuRotDegree)
+        self.verts = self.inverseRotateY(points=self.verts,angle=accuRotDegree) # vertex of the mesh
+        self.vertsNormal = self.inverseRotateY(points=self.vertsNormal,angle=accuRotDegree) # normal of the mesh
+
+        #----- FRONT view rendering -----
+        self.start_rendering(accuRotDegree=0, info="FRONT", dataPrefix=None, meshPath=self.meshPath)
+
+        #----- RIGHT view rendering -----
+        self.start_rendering(accuRotDegree=-90, info="RIGHT", dataPrefix=None, meshPath=self.meshPath)
+
+        #----- BACK view rendering -----
+        self.start_rendering(accuRotDegree=-90, info="BACK", dataPrefix=None, meshPath=self.meshPath)
+
+        #----- LEFT view rendering -----
+        self.start_rendering(accuRotDegree=-90, info="LEFT", dataPrefix=None, meshPath=self.meshPath)
+
+    def render_colored_mesh_without_bg(self, meshPath, metrics=True):
+
+        self.meshPath = meshPath
+        self.metrics = metrics
+        self.newMeshToRead = True
+
+        # init render
+        self.rn = ColoredRenderer()
+
+        # set cam
+        self.rn.camera = self.init_cam(w=self.w,
+                                       h=self.h,
+                                       rt=np.array([0,0,0]),
+                                       t=np.array([0,0,2]),
+                                       f=self.f)
+
+        # set rendering frustum region
+        self.rn.frustum = {'near': self.near,
+                           'far': self.far,
+                           'height': self.h,
+                           'width': self.w}
+
+        # set background image
+        self.rn.background_image = np.ones((self.h, self.w, 3))
+
+        # print("Loading mesh...")
+        self.set_v_f_vc_bgcolor(meshPath=meshPath)
+
+        self.set_sky_lighting_directions()
+
+        #----- FRONT view rendering -----
+        self.start_rendering(accuRotDegree=0, info="FRONT", dataPrefix=None, meshPath=meshPath)
+
+        #----- RIGHT view rendering -----
+        self.start_rendering(accuRotDegree=-90, info="RIGHT", dataPrefix=None, meshPath=meshPath)
+
+        #----- BACK view rendering -----
+        self.start_rendering(accuRotDegree=-90, info="BACK", dataPrefix=None, meshPath=meshPath)
+
+        #----- LEFT view rendering -----
+        self.start_rendering(accuRotDegree=-90, info="LEFT", dataPrefix=None, meshPath=meshPath)
+
+    def render_turntable(self, meshPath):
+        self.meshPath = meshPath
+        self.newMeshToRead = True
+        self.angle = 0
+
+        self.rn = ColoredRenderer()
+
+        # init render
+        self.rn = ColoredRenderer()
+
+        # set cam
+        self.rn.camera = self.init_cam(w=self.w,
+                                       h=self.h,
+                                       rt=np.array([0,0,0]),
+                                       t=np.array([0,0,2]),
+                                       f=self.f)
+
+        # set rendering frustum region
+        self.rn.frustum = {'near': self.near,
+                           'far': self.far,
+                           'height': self.h,
+                           'width': self.w}
+
+        # set background image
+        self.rn.background_image = np.ones((self.h, self.w, 3))
+
+        # print("Loading mesh...")
+        self.set_v_f_vc_bgcolor(meshPath=meshPath)
+
+        self.set_sky_lighting_directions()
+
+        #----- FRONT view rendering -----
+        self.start_rendering(accuRotDegree=0, info="FRONT", dataPrefix=None, meshPath=meshPath)
+        from tqdm import tqdm
+        for lsangle in tqdm(range(359)):
+            self.angle += 1
+            self.start_rendering(accuRotDegree=-1, info="FRONT", dataPrefix=None, meshPath=meshPath)
+
+        os.system("ffmpeg -framerate 60 -i img_%04d.png -vcodec libx264 -y -pix_fmt yuv420p -refs 16 output.mp4")
 
     def set_sky_lighting_directions(self):
 
@@ -437,53 +579,107 @@ class render_mesh(object):
         # update self.visual_check_counter
         if self.visual_check_counter<numMeshVisualCheck*args.eachMeshWithBgNum*NUM_VIEW_RENDERING: self.visual_check_counter += 1
 
+    def save_rendering_for_metrics(self, mesh_path, info="FRONT"):
+
+        mesh_name = mesh_path.split("/")[-1] # 08720_meshRefined.obj
+
+        mesh_rendered_name = mesh_name.replace("meshRefined.obj", "%s.jpg" %info)
+    
+        dirName = self.create_dir(self.saveDir+"/renderedImage")
+        # print("saving to %s" %("%s/%s"%(self.saveDir, mesh_rendered_name)))
+
+        image_padded = np.ones((max(self.rgbImage.shape), max(self.rgbImage.shape), 3), np.uint8) * 255 # (1536, 1536, 3)
+        image_padded[:,image_padded.shape[0]//2-min(self.rgbImage.shape[:2])//2:image_padded.shape[0]//2+min(self.rgbImage.shape[:2])//2,:] = self.rgbImage*255 # (1536, 1536, 3)
+
+        # pdb.set_trace()
+        # resize to (512, 512, 3), np.uint8
+        image_padded = cv.resize(image_padded, (512, 512))
+        # image_padded = Image.fromarray(image_padded)
+        cv.imwrite("%s/renderedImage/%s"%(self.saveDir, mesh_rendered_name), (image_padded).astype(np.uint8)[:,:,::-1])
+
+    def save_rendering_for_gt(self, mesh_path, info="FRONT"):
+
+        mesh_name = mesh_path.split("/")[-1] # 08720_meshRefined.obj
+
+        mesh_rendered_name = mesh_name.replace("mesh.obj", "%s_%s.jpg" %(self.mesh_name, info))
+    
+        dirName = self.create_dir(self.saveDir+"/gtImage")
+        # print("saving to %s" %("%s/%s"%(self.saveDir, mesh_rendered_name)))
+
+        image_padded = np.ones((max(self.rgbImage.shape), max(self.rgbImage.shape), 3), np.uint8) * 255 # (1536, 1536, 3)
+        image_padded[:,image_padded.shape[0]//2-min(self.rgbImage.shape[:2])//2:image_padded.shape[0]//2+min(self.rgbImage.shape[:2])//2,:] = self.rgbImage*255 # (1536, 1536, 3)
+
+        # pdb.set_trace()
+        # resize to (512, 512, 3), np.uint8
+        image_padded = cv.resize(image_padded, (512, 512))
+        # image_padded = Image.fromarray(image_padded)
+        cv.imwrite("%s/gtImage/%s"%(self.saveDir, mesh_rendered_name), (image_padded).astype(np.uint8)[:,:,::-1])
+
+    def save_rendering_for_turntable(self):
+        dirName = self.create_dir(self.saveDir+"/renderedImages")
+        # print("saving to %s" %("%s/%s"%(self.saveDir, mesh_rendered_name)))
+
+        image_padded = np.ones((max(self.rgbImage.shape), max(self.rgbImage.shape), 3), np.uint8) * 255 # (1536, 1536, 3)
+        image_padded[:,image_padded.shape[0]//2-min(self.rgbImage.shape[:2])//2:image_padded.shape[0]//2+min(self.rgbImage.shape[:2])//2,:] = self.rgbImage*255 # (1536, 1536, 3)
+
+        # pdb.set_trace()
+        # resize to (512, 512, 3), np.uint8
+        image_padded = cv.resize(image_padded, (512, 512))
+
+        cv.imwrite("%s/renderedImages/img_%04d.png"%(self.saveDir, self.angle), (image_padded).astype(np.uint8)[:,:,::-1])
+        
     def start_rendering(self, accuRotDegree, info, dataPrefix, meshPath):
 
         # rotate views for {RIGHT, BACK, LEFT}
         self.verts = self.inverseRotateY(points=self.verts,angle=accuRotDegree) # vertex of the mesh
         self.vertsNormal = self.inverseRotateY(points=self.vertsNormal,angle=accuRotDegree) # normal of the mesh
-        self.vertsSmpl = self.inverseRotateY(points=self.vertsSmpl,angle=accuRotDegree) # vertex of the SMPL
-        self.jointsFromSmplParams = self.inverseRotateY(points=self.jointsFromSmplParams,angle=accuRotDegree) # joints of the SMPL
+        # self.vertsSmpl = self.inverseRotateY(points=self.vertsSmpl,angle=accuRotDegree) # vertex of the SMPL
+        # self.jointsFromSmplParams = self.inverseRotateY(points=self.jointsFromSmplParams,angle=accuRotDegree) # joints of the SMPL
 
         # init. the render
         self.rn.set(v=self.verts, f=self.faces, vc=self.vertsColor, bgcolor=np.ones(3))
 
         # set lighting
-        self.set_lighting(initSkyLightLoc=np.array([0.,-2.5,-10]))
+        if not self.metrics:
+            self.set_lighting(initSkyLightLoc=np.array([0.,-2.5,-10]))
 
         # render rgbImage
         self.rgbImage = self.renderRGB() # (h,w,3), values in (0,1)
 
         # render {0,1} maskImage, 1-mask, 0-bg
-        self.visMap, self.barycentricMap, self.maskImage = self.renderMask()
+        # self.visMap, self.barycentricMap, self.maskImage = self.renderMask()
 
         # render normalMap
-        self.normalMap, self.normalRGB = self.renderNormal()
+        # self.normalMap, self.normalRGB = self.renderNormal()
 
         # voxelize the mesh
-        self.meshVoxels, self.maskFromVoxels = self.voxelize(meshPath=meshPath,info=info)
+        # self.meshVoxels, self.maskFromVoxels = self.voxelize(meshPath=meshPath,info=info)
 
         # render mesh semantic segmentation mask
-        self.meshSem, self.meshSemKeepRatio = self.renderMeshSem()
+        # self.meshSem, self.meshSemKeepRatio = self.renderMeshSem()
 
         # render 2D skeleton
-        self.skeleton2D, self.skeleton3D = self.renderSkeleton()
+        # self.skeleton2D, self.skeleton3D = self.renderSkeleton()
 
         # render SMPL semantic segmentation mask
-        self.smplSem, self.smplSemKeepRatio = self.renderSmplSem()
+        # self.smplSem, self.smplSemKeepRatio = self.renderSmplSem()
 
         # render IUV map from SMPL
-        self.smplIUV = self.renderSmplIUV()
+        # self.smplIUV = self.renderSmplIUV()
 
         # render SMPL semantic voxels
-        self.smplSemVoxels = self.semanticVoxelizationSMPL(meshPath=meshPath,info=info)
+        # self.smplSemVoxels = self.semanticVoxelizationSMPL(meshPath=meshPath,info=info)
 
         # visualize or save rendered data
         if self.quickDemo:
-
             self.quick_demo(info=info,meshPath=meshPath.replace("mesh.obj","mesh_normalized.obj"),smplPath=meshPath.replace("mesh.obj","smpl_normalized.obj"))
+        elif self.args.turntable:
+            self.save_rendering_for_turntable()
+        elif self.metrics and self.loadedConfig:
+            self.save_rendering_for_gt(info=info, mesh_path=meshPath)
+        elif self.metrics:
+            self.save_rendering_for_metrics(info=info, mesh_path=meshPath)     
         else:
-
             self.save_rendering(dataPrefix=dataPrefix,info=info)
 
     def renderSmplIUV(self):
@@ -948,8 +1144,10 @@ class render_mesh(object):
 
         # load the UnNormed-mesh, if this is the first time read this mesh
         assert(os.path.exists(meshPath))
+        
         if self.newMeshToRead:
 
+            # print("Loading new mesh...")
             # read mesh.obj
             mesh = load_obj_data(meshPath)
 
@@ -958,26 +1156,35 @@ class render_mesh(object):
             self.faces = mesh['f'] # (N, 3)
             self.vertsColor = mesh['vc'] # (N, 3)
             self.vertsNormalSourcePose = mesh['vn'] # (N, 3)
+            if self.vertsNormalSourcePose.shape[0] == 0:
+                self.vertsNormalSourcePose = mesh['v']
 
         # register the UnNormed-mesh with the UnNormed-SMPL, if this is the first time read this UnNormed-mesh
-        if self.newMeshToRead:
+        # if self.newMeshToRead:
 
-            # obtain mesh vertex semantic labels, using SMPL rest shape under different normalizaiton methods
-            self.mesh_vertex_label, self.mesh_vertex_label_keepRatio, self.vertsSmplSourcePose, self.facesSmpl = self.match_mesh_with_smpl(smpl_path=meshPath.replace("mesh.obj","smpl.obj"))
+        #     # obtain mesh vertex semantic labels, using SMPL rest shape under different normalizaiton methods
+        #     self.mesh_vertex_label, self.mesh_vertex_label_keepRatio, self.vertsSmplSourcePose, self.facesSmpl = self.match_mesh_with_smpl(smpl_path=meshPath.replace("mesh.obj","smpl.obj"))
 
-            # parse 24 3D-skeleton coords. of the SMPL model
-            self.vertsFromSmplParamsSourcePose, self.jointsFromSmplParamsSourcePose = self.parse_smpl_params(smpl_params_path=meshPath.replace("mesh.obj", "smpl_params.txt"))
+        #     # parse 24 3D-skeleton coords. of the SMPL model
+        #     self.vertsFromSmplParamsSourcePose, self.jointsFromSmplParamsSourcePose = self.parse_smpl_params(smpl_params_path=meshPath.replace("mesh.obj", "smpl_params.txt"))
 
         # for each time of rendering
         # 1) apply random rotation to     {mesh-verts, mesh-normal, smpl-register-verts, smpl-param-3dJoints}
         # 2) voxel-based normalization to {mesh-verts,              smpl-register-verts, smpl-param-3dJoints}, normalize the mesh into H [-0.5,0.5]*(1-margin), W/D [-0.333,0.333]*(1-margin)
         # 3) reset                        {mesh-verts, mesh-normal, smpl-register-verts, smpl-param-3dJoints}
+
         vertsZeroMean, self.meshNormMean, _ = self.voxelization_normalization(self.vertsRaw,useScaling=False) # we want to determine scaling factor, after applying Rot jittering so that the mesh fits better into WHD
-        self.randomRot, randomRotTrans = self.generate_random_rot_matrix()
+        if self.metrics and self.loadedConfig:
+            self.randomRot, randomRotTrans = np.array(self.loadedConfig["randomRot"]), np.transpose(np.array(self.loadedConfig["randomRot"]))
+        elif self.metrics:
+            self.randomRot, randomRotTrans = np.array([[1,0,0],[0,1,0],[0,0,1]]), np.transpose(np.array([[1,0,0],[0,1,0],[0,0,1]])) 
+        else:
+            self.randomRot, randomRotTrans = self.generate_random_rot_matrix()
+
         self.verts, _, self.meshNormScale = self.voxelization_normalization(np.dot(vertsZeroMean,randomRotTrans),useMean=False)
         self.vertsNormal          = copy.deepcopy(np.dot(self.vertsNormalSourcePose,randomRotTrans))
-        self.vertsSmpl            = copy.deepcopy(np.dot(self.vertsSmplSourcePose-self.meshNormMean,randomRotTrans)*self.meshNormScale)
-        self.jointsFromSmplParams = copy.deepcopy(np.dot(self.jointsFromSmplParamsSourcePose-self.meshNormMean,randomRotTrans)*self.meshNormScale)
+        # self.vertsSmpl            = copy.deepcopy(np.dot(self.vertsSmplSourcePose-self.meshNormMean,randomRotTrans)*self.meshNormScale)
+        # self.jointsFromSmplParams = copy.deepcopy(np.dot(self.jointsFromSmplParamsSourcePose-self.meshNormMean,randomRotTrans)*self.meshNormScale)
 
         # save_obj_data_binary({"v":self.vertsRaw, "f":self.faces, "vc":self.vertsColor}, "./examplesRendering/debug_000.obj")
         # save_obj_data_binary({"v":vertsZeroMean, "f":self.faces, "vc":self.vertsColor}, "./examplesRendering/debug_111-0.obj")
@@ -1078,6 +1285,8 @@ def parse_args():
     parser = argparse.ArgumentParser()
 
     parser.add_argument('--quickDemo', action='store_true', help='If enabled, do a quick demo of rendering a specified mesh')
+    parser.add_argument('--metrics', action='store_true', help='If enabled, do a rendering of the meshes needed for evaluation purposes')
+    parser.add_argument('--turntable', action='store_true', help='If enabled, do a turntable rendering for viewing purposes')
 
     parser.add_argument('--w', type=int, default="256", help="128*2")
     parser.add_argument('--h', type=int, default="384", help="192*2")
@@ -1095,8 +1304,10 @@ def parse_args():
 
     parser.add_argument('--splitNum', type=int, default="30", help="for multi-process running")
     parser.add_argument('--splitIdx', type=int, default="0", help="{0, ..., splitNum-1}")
+    parser.add_argument('--giveIdx', nargs='+', default=[None], type=int, help='list of idx to be rendered')
 
     parser.add_argument('--eachMeshWithBgNum', type=int, default="4", help="each mesh will be rendered with several background images")
+    parser.add_argument('--meshPath', type=str, default="", help="mesh path for rendering of turntable")
 
     args = parser.parse_args()
 
@@ -1245,6 +1456,78 @@ def quick_rendering_demo(args):
     assert( args.quickDemo==True )
     render.render_colored_mesh_with_background(meshPath=meshPath,bgImgPath=bgImgPath,quickDemo=True,dataPrefix="demo")
 
+def read_recon_mesh_path(mesh_dir):
+
+    print("reading mesh paths from specified directory: %s" %(mesh_dir))
+
+    if mesh_dir[-1] == "/":
+        mesh_dir = mesh_dir[:-1]
+
+    mesh_lists = glob.glob("%s/*.obj" %(mesh_dir))
+    mesh_paths = []
+
+    for mesh_name in mesh_lists:
+        mesh_paths.append("%s" % (mesh_name))
+
+    print("Number of mesh: %d" %len(mesh_paths))
+
+    return sorted(mesh_paths), len(mesh_paths)
+    
+def turntable(args):
+    render = render_mesh(args=args,w=args.w*args.resolutionScale,h=args.h*args.resolutionScale,f=args.f*args.resolutionScale,near=args.near,far=args.far,saveDir=args.saveDir)
+
+    meshPath = args.meshPath
+
+    print("Rendering turntable....")
+    print("Path: " + meshPath)
+    render.render_turntable(meshPath)
+    
+def metrics(args):
+
+    render = render_mesh(args=args,w=args.w*args.resolutionScale,h=args.h*args.resolutionScale,f=args.f*args.resolutionScale,near=args.near,far=args.far,saveDir=args.saveDir)
+    render_gt = render_mesh(w=args.w*args.resolutionScale,h=args.h*args.resolutionScale,f=args.f*args.resolutionScale,near=args.near,far=args.far,saveDir=args.saveDir)
+    mesh_paths, mesh_num = read_recon_mesh_path(args.meshDirSearch)
+
+    # determine split range, for multi-process running
+    splitRange = compute_split_range(dataNum=mesh_num,splitNum=args.splitNum,splitIdx=args.splitIdx)
+    print("Current split: %d - %d" %(splitRange[0], splitRange[1]))
+
+    t_used = 0.
+    for mesh_idx in range(mesh_num):
+        # split range check, skip if not belonging to current split
+        if not (splitRange[0] <= mesh_idx < splitRange[1]):
+            continue
+
+        t_start = time.time()
+
+        mesh_name = mesh_paths[mesh_idx].split("/")[-1][:6]
+        config_path = "/mnt/tanjiale/geopifu_dataset/humanRender_no_config/config/%s.json" % mesh_name
+        
+        if args.giveIdx[0] != None and int(mesh_name) not in args.giveIdx:
+            continue
+
+        print("###############################################################################")
+        print("-----------------------------%s--------------------------------------------" %mesh_name)
+        print("###############################################################################")
+        print("Rendering recon. mesh...")
+        render.render_colored_mesh_without_bg(mesh_paths[mesh_idx])
+
+        assert(os.path.exists(config_path))
+        with open(config_path, 'r') as infile:
+            loadedConfig = json.load(infile)
+
+        print("Rendering gt mesh...")
+        render_gt.mesh_name = mesh_name
+        render_gt.dataPrefix = int(mesh_name)
+        render_gt.render_colored_gt_mesh_without_bg(loadedConfig)
+
+        # log
+        t_used += (time.time() - t_start) # sec.
+        t_remains = (splitRange[1]-mesh_idx-1) * (t_used/(mesh_idx-splitRange[0]+1)) / 3600. # remaining hours
+        print("\n\n###############################################################################")
+        print("Split %d/%d | rendering mesh-%d within [%d, %d) | remains %.3f h(s) ..." % (args.splitIdx, args.splitNum, mesh_idx, splitRange[0], splitRange[1], t_remains))
+        print("###############################################################################\n\n")
+
 if __name__ == '__main__':
 
     # parse args.
@@ -1252,6 +1535,10 @@ if __name__ == '__main__':
 
     if args.quickDemo:
         quick_rendering_demo(args=args)
+    elif args.metrics:
+        metrics(args=args)
+    elif args.turntable:
+        turntable(args=args)
     else:
         main(args=args)
 

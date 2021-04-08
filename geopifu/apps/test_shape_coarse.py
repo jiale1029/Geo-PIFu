@@ -33,6 +33,8 @@ target_dir_path_abs      = os.path.abspath(target_dir_path_relative)
 sys.path.insert(0, target_dir_path_abs)
 import ObjIO
 
+import torchvision.transforms.functional as F
+
 def parse_args():
 
     parser = argparse.ArgumentParser()
@@ -223,6 +225,53 @@ class Evaluator:
             new_state_dict[name] = v
 
         return new_state_dict
+
+    def load_custom_image(self, image_path, mask_path):
+
+        # init.
+        data_return = {}
+
+        if True:
+            data_return["name"] = image_path.split("/")[-1]
+            assert ( ".jpg" in data_return["name"] or ".png" in data_return["name"])
+
+        # load mask
+        if True:
+            # {read, discretize} data, values only within {0., 1.}
+            mask_data = np.round((cv2.imread(mask_path)[:,:,0]).astype(np.float32)/255.) # (1536, 1024)
+            mask_data_padded = np.zeros((max(mask_data.shape), max(mask_data.shape)), np.float32) # (1536, 1536)
+            # pdb.set_trace()
+            mask_data_padded[:,mask_data_padded.shape[0]//2-min(mask_data.shape)//2:mask_data_padded.shape[0]//2+min(mask_data.shape)//2] = mask_data # (1536, 1536)
+            # NN resize to (512, 512)
+            mask_data_padded = cv2.resize(mask_data_padded, (self.opt.loadSize,self.opt.loadSize), interpolation=cv2.INTER_NEAREST)
+            mask_data_padded = Image.fromarray(mask_data_padded)
+
+            # convert to (1, 512, 512) tensors, float, 1-fg, 0-bg
+            mask_data_padded = transforms.ToTensor()(mask_data_padded).float() # 1. inside, 0. outside
+
+            # push into dict.
+            data_return["mask"] = mask_data_padded.unsqueeze(0) # (1, 1, 512, 512), 1-fg, 0-bg
+
+        # ----- load image -----
+        if True:
+
+            # read data BGR -> RGB, np.uint8
+            image = cv2.imread(image_path)[:,:,::-1] # (1536, 1024, 3), np.uint8, {0,...,255}
+            image_padded = np.zeros((max(image.shape), max(image.shape), 3), np.uint8) # (1536, 1536, 3)
+            image_padded[:,image_padded.shape[0]//2-min(image.shape[:2])//2:image_padded.shape[0]//2+min(image.shape[:2])//2,:] = image # (1536, 1536, 3)
+
+            # resize to (512, 512, 3), np.uint8
+            image_padded = cv2.resize(image_padded, (self.opt.loadSize, self.opt.loadSize))
+            image_padded = Image.fromarray(image_padded)
+
+            # convert to (3, 512, 512) tensors, RGB, float, -1 ~ 1. note that bg is 0 not -1.
+            image_padded = self.to_tensor(image_padded) # (3, 512, 512), float -1 ~ 1
+            image_padded = mask_data_padded.expand_as(image_padded) * image_padded
+
+            # push into dict.
+            data_return["img"] = image_padded.unsqueeze(0) # BCHW, (1,3,512,512), float -1 ~ 1, bg are all ZEROS, not -1.
+
+        return data_return
 
     def load_image(self, image_path, mask_path, configPath, visual_demo_flag, meshVoxels_path):
 
@@ -432,13 +481,32 @@ def main(args):
             # the gt low-resolution mesh. obj
             os.system("mv %s ./sample_images/" % (save_path_gt_obj))
 
+def main_custom(args):
+
+    if not os.path.exists(args.resultsDir): os.makedirs(args.resultsDir)    
+
+    evaluator = Evaluator(args)
+
+    mesh_name = args.mesh_name
+    print("Loading custom images from " + args.img_path)
+    data = evaluator.load_custom_image(image_path=args.img_path, mask_path=args.mask_path)
+    save_path_obj = "%s/%s_deepVoxel.obj" % (args.resultsDir, mesh_name) # save the reconstructed mesh obj
+    save_path_npy = "%s/%s_deepVoxels.npy" % (args.resultsDir, mesh_name) # save the estimated deepVoxels npy
+    print("Preparing deep voxels...")
+    evaluator.prepare_deepVoxels(data=data, save_path=save_path_npy, save_deepVoxels=True, save_meshVoxels=True)
+    save_path_png, save_path_gt_obj = evaluator.eval(data, save_path=save_path_obj, visual_demo_flag=False)
+
+
 if __name__ == '__main__':
 
     # parse args.
     args = BaseOptions().parse()
 
-    # main function
-    main(args=args)
+    if args.img_path and args.mask_path:
+        main_custom(args=args)
+    else:
+        # main function
+        main(args=args)
 
 
 

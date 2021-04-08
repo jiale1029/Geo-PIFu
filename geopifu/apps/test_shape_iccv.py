@@ -39,6 +39,7 @@ def parse_args():
     parser = argparse.ArgumentParser()
 
     parser.add_argument('--batchSize', type=int, default="1")
+    parser.add_argument('--startIndex', type=int, default=0)
     parser.add_argument('--first_channel_len_of_rgb_N_sem_input', type=int, default="8")
     parser.add_argument('--bottleWidth', type=int, default="4")
 
@@ -108,6 +109,8 @@ def compute_split_range(testing_inds, args):
 
     testIdxList = []
     for eachTestIdx in testing_inds[splitRange[0]:splitRange[1]]:
+        if eachTestIdx < args.startIndex:
+            continue
         if ("%06d"%(eachTestIdx)) in consts.black_list_images: continue
         print("checking %06d-%06d-%06d..." % (testing_inds[splitRange[0]], eachTestIdx, testing_inds[splitRange[1]-1]+1))
 
@@ -294,6 +297,100 @@ class Evaluator:
 
         return new_state_dict
 
+    def load_custom_image(self, image_path, mask_path, args):
+        dict_to_return = {}
+
+        # ----- mesh name -----
+        if True:
+            dict_to_return["name"] = image_path.split("/")[-1]
+            assert ( ".jpg" in dict_to_return["name"] or ".png" in dict_to_return["name"])
+
+        # ----- load mask -----
+        if True:
+
+            # {read, discretize} data, values only within {0., 1.}
+            mask_data = np.round((cv2.imread(mask_path)[:,:,0]).astype(np.float32)/255.) # (1536, 1024)
+            mask_data_padded = np.zeros((max(mask_data.shape), max(mask_data.shape)), np.float32) # (1536, 1536)
+            mask_data_padded[:,mask_data_padded.shape[0]//2-min(mask_data.shape)//2:mask_data_padded.shape[0]//2+min(mask_data.shape)//2] = mask_data # (1536, 1536)
+
+            # NN resize to (512, 512)
+            mask_data_padded = cv2.resize(mask_data_padded, (self.opt.loadSize,self.opt.loadSize), interpolation=cv2.INTER_NEAREST)
+            mask_data_padded = Image.fromarray(mask_data_padded)
+
+            # convert to (1, 512, 512) tensors, float, 1-fg, 0-bg
+            mask_data_padded = transforms.ToTensor()(mask_data_padded).float() # 1. inside, 0. outside
+
+            dict_to_return["mask"] = mask_data_padded.unsqueeze(0) # (1, 1, 512, 512), 1-fg, 0-bg
+
+        # ----- load image -----
+        if True:
+
+            # read data BGR -> RGB, np.uint8
+            image = cv2.imread(image_path)[:,:,::-1] # (1536, 1024, 3), np.uint8, {0,...,255}
+            image_padded = np.zeros((max(image.shape), max(image.shape), 3), np.uint8) # (1536, 1536, 3)
+            image_padded[:,image_padded.shape[0]//2-min(image.shape[:2])//2:image_padded.shape[0]//2+min(image.shape[:2])//2,:] = image # (1536, 1536, 3)
+
+            # resize to (512, 512, 3), np.uint8
+            image_padded = cv2.resize(image_padded, (self.opt.loadSize, self.opt.loadSize))
+            image_padded = Image.fromarray(image_padded)
+
+            # convert to (3, 512, 512) tensors, RGB, float, -1 ~ 1. note that bg is 0 not -1.
+            image_padded = self.to_tensor(image_padded) # (3, 512, 512), float -1 ~ 1
+            image_padded = mask_data_padded.expand_as(image_padded) * image_padded
+
+            dict_to_return["img"] = image_padded.unsqueeze(0) # VCHW, (1,3,512,512), float -1 ~ 1, bg are all ZEROS, not -1.
+
+        # ----- load calib -----
+
+        projection_matrix = np.identity(4)
+        projection_matrix[0,0] =  1./consts.h_normalize_half # const ==  2.
+        projection_matrix[1,1] =  1./consts.h_normalize_half # const ==  2.
+        projection_matrix[2,2] = -1./consts.h_normalize_half # const == -2., to get inverse depth
+        calib = torch.Tensor(projection_matrix).float()
+        dict_to_return["calib"] = calib.unsqueeze(0) # (1, 4, 4)
+
+        # ----- load extrinsic -----
+        rotAngByViews = [0, -90., -180., -270.]
+        angle = np.radians(rotAngByViews[0])
+        ry = np.array([ [ np.cos(angle), 0., np.sin(angle)],
+                        [            0., 1.,            0.],
+                        [-np.sin(angle), 0., np.cos(angle)] ]) # (3,3)
+        ry = np.transpose(ry)
+
+        extrinsic        = np.identity(4)
+        viewRot          = ry # by view direction R
+        extrinsic[:3,:3] = viewRot
+        extrinsic = torch.Tensor(extrinsic).float()
+        dict_to_return["extrinsic"] = extrinsic.unsqueeze(0)
+        
+
+        # ----- load b_min and b_max -----
+
+        # B_MIN = np.array([-1, -1, -1])
+        # B_MAX = np.array([ 1,  1,  1])
+        B_MIN = np.array([-consts.real_w/2., -consts.real_h/2., -consts.real_w/2.])
+        B_MAX = np.array([ consts.real_w/2.,  consts.real_h/2.,  consts.real_w/2.])
+        dict_to_return["b_min"] = B_MIN
+        dict_to_return["b_max"] = B_MAX
+
+        # ----- load deepVoxels -----
+        if args.deepVoxels_fusion != None:
+
+            # set path
+            deepVoxels_path =  args.deepVoxelPath
+            if not os.path.exists(deepVoxels_path):
+                print("DeepVoxels: can not find %s!!!" % (deepVoxels_path))
+                pdb.set_trace()
+
+            # load npy, (C=8,W=32,H=48,D=32), C-XYZ, np.float32, only positive values
+            deepVoxels_data = np.load(deepVoxels_path)
+
+            # (C=8,W=32,H=48,D=32) to (C=8,D=32,H=48,W=32)
+            deepVoxels_data = np.transpose(deepVoxels_data, (0,3,2,1))
+            dict_to_return["deepVoxels"] = torch.from_numpy(deepVoxels_data)
+
+        return dict_to_return
+
     def load_image(self, image_path, mask_path, configPath, idx, args):
 
         # init.
@@ -352,6 +449,21 @@ class Evaluator:
         calib = torch.Tensor(projection_matrix).float()
         dict_to_return["calib"] = calib.unsqueeze(0) # (1, 4, 4)
 
+        # ----- load extrinsic -----
+        rotAngByViews = [0, -90., -180., -270.]
+        angle = np.radians(rotAngByViews[0])
+        ry = np.array([ [ np.cos(angle), 0., np.sin(angle)],
+                        [            0., 1.,            0.],
+                        [-np.sin(angle), 0., np.cos(angle)] ]) # (3,3)
+        ry = np.transpose(ry)
+
+        extrinsic        = np.identity(4)
+        viewRot          = ry # by view direction R
+        extrinsic[:3,:3] = viewRot
+        extrinsic = torch.Tensor(extrinsic).float()
+        dict_to_return["extrinsic"] = extrinsic.unsqueeze(0)
+        
+
         # ----- load b_min and b_max -----
 
         # B_MIN = np.array([-1, -1, -1])
@@ -402,6 +514,17 @@ class Evaluator:
             else:
                 gen_mesh_iccv(opt, self.netG, self.cuda, data, save_path, use_octree=use_octree)
 
+def main_custom(args):
+    evaluator = Evaluator(args)
+    mesh_name = args.mesh_name
+    save_path_obj = "%s/%s.obj" % (args.resultsDir, mesh_name)
+    save_path_png = save_path_obj.replace(".obj", ".png")
+    
+    print("Loading custom image ", args.img_path)
+    data = evaluator.load_custom_image(args.img_path, args.mask_path, args)
+    print("Generating mesh...")
+    evaluator.eval(data, use_octree=False, save_path=save_path_obj)
+
 def main(args):
     """
     For each test image will save the following items for example, about 4 MB
@@ -425,7 +548,7 @@ def main(args):
 
     # init the Pytorch network
     evaluator = Evaluator(args)
-    
+
     # start inference
     frameIdx = [0, 0, 0]
     frameIdx[0] = int( testIdxList[0][-1].split("/")[-1].split(".")[0])
@@ -449,6 +572,9 @@ def main(args):
             'b_max': B_MAX
             'deepVoxels': (C=8,W=32,H=48,D=32), C-XYZ, np.float32, only positive values
         """
+        if os.path.exists(save_path_obj) and os.path.exists(save_path_png):
+            continue
+
         data = evaluator.load_image(image_path=pathList[2], mask_path=pathList[1], configPath=pathList[0], idx=frameIdx[1], args=args)
 
         # forward pass and save results
@@ -487,8 +613,11 @@ if __name__ == '__main__':
     # parse args.
     args = BaseOptions().parse()
 
-    # main function
-    main(args=args)
+    if args.img_path and args.mask_path and args.deepVoxelPath:
+        main_custom(args=args)
+    else:
+        # main function
+        main(args=args)
 
 
 
