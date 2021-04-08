@@ -9,6 +9,7 @@ import cv2
 from PIL import Image
 from tqdm import tqdm
 import pdb # pdb.set_trace()
+import math
 import glob
 
 def get_training_test_indices(args, shuffle):
@@ -125,6 +126,91 @@ def reshape_multiview_tensors(image_tensor, calib_tensor):
     )
 
     return image_tensor, calib_tensor
+
+def calc_opp_calib(calib, extrinsic, device="cpu"):
+
+    viewRotOrg = torch.transpose(extrinsic[:,0,:3,:3], 1, 2) # (B*V,3,3)
+
+    ang = torch.Tensor([np.radians(-180)]).float()
+    ry = torch.Tensor([ [ torch.cos(ang), 0., torch.sin(ang)],
+                [            0., 1.,            0.],
+                [-torch.sin(ang), 0., torch.cos(ang)] ]).float().to(device) # (3,3)
+
+    trans_intrinsic = torch.diag(torch.Tensor([1,1,1,1])) # trans intrinsic
+    scale_intrinsic = torch.diag(torch.Tensor([1,1,1,1])) # ortho. proj. focal length
+    scale_intrinsic[0,0] =  1./consts.h_normalize_half # const ==  2.
+    scale_intrinsic[1,1] =  1./consts.h_normalize_half # const ==  2.
+    scale_intrinsic[2,2] = -1./consts.h_normalize_half # const == -2.
+    intrinsic = torch.mm(trans_intrinsic, scale_intrinsic).to(device)
+
+    calib_list = []
+    for idx in range(viewRotOrg.shape[0]):
+        vr = viewRotOrg[idx].to(device)
+        viewRot = torch.mm(vr, ry)
+
+        # sy = math.sqrt(viewRotOrg[idx][0,0] * viewRotOrg[idx][0,0] +  viewRotOrg[idx][1,0] * viewRotOrg[idx][1,0])
+        # singular = sy < 1e-6
+        # y = math.atan2(-viewRotOrg[idx][2,0], sy)
+        # print("Original: ", y*180/math.pi)
+
+        # sy = math.sqrt(viewRot[0,0] * viewRot[0,0] +  viewRot[1,0] * viewRot[1,0])
+        # singular = sy < 1e-6
+        # y = math.atan2(-viewRot[2,0], sy)
+        # print("Converting back: ", y*180/math.pi)
+        extrinsic = torch.diag(torch.Tensor([1,1,1,1])).to(device)
+        extrinsic[:3,:3] = viewRot.T
+        # print("original:", ang)
+        # print("calc opp:", torch.atan2(-1*ry[2,0], torch.sqrt((ry[2,1]+1e-5)**2+(ry[2,2]+1e-5)**2)), "\n")
+        og_calib = calib[idx].unsqueeze(0) #
+        opp_calib = torch.mm(intrinsic, extrinsic) # (4,4)
+        opp_calib = opp_calib.unsqueeze(0)
+        new_calib = torch.cat([og_calib, opp_calib], dim=0) # (1,4,4), (1,4,4)
+        calib_list.append(new_calib)
+
+    # pdb.set_trace()
+    return torch.stack(calib_list   , dim=0)
+
+# def calc_opp_calib(calib, extrinsic, device="cpu"):
+#     """
+#     calib
+#         original calib, we need to rotate this 180 degrees
+#     """
+#     viewRotOrg = torch.transpose(extrinsic[:,0,:3,:3], 1, 2) # (B*V,4,4) -> (B, 4, 4)
+#     pdb.set_trace()
+
+#     angles = torch.atan2(-1*viewRotOrg[:,2,0], torch.sqrt((viewRotOrg[:,2,1]+1e-5).pow(2)+(viewRotOrg[:,2,2]+1e-5).pow(2)))
+
+#     calib_list = []
+#     for idx,ang in enumerate(angles):
+#         opp_ang = ang - np.radians(180)
+
+#         ry = torch.Tensor([ [ torch.cos(opp_ang), 0., torch.sin(opp_ang)],
+#                         [            0., 1.,            0.],
+#                         [-torch.sin(opp_ang), 0., torch.cos(opp_ang)] ]).float() # (3,3)
+
+#         viewRot = np.transpose(ry) # transpose it back to get its' inverse
+#         # pdb.set_trace()
+
+#         trans_intrinsic = np.identity(4) # trans intrinsic
+#         scale_intrinsic = np.identity(4) # ortho. proj. focal length
+#         scale_intrinsic[0,0] =  1./consts.h_normalize_half # const ==  2.
+#         scale_intrinsic[1,1] =  1./consts.h_normalize_half # const ==  2.
+#         scale_intrinsic[2,2] = -1./consts.h_normalize_half # const == -2.
+
+#         extrinsic = np.identity(4)
+#         extrinsic[:3,:3] = viewRot
+#         print("original:", ang)
+#         print("opp:", opp_ang)
+#         print("calc opp:", torch.atan2(-1*ry[2,0], torch.sqrt((ry[2,1]+1e-5)**2+(ry[2,2]+1e-5)**2)), "\n")
+#         intrinsic = np.matmul(trans_intrinsic, scale_intrinsic)
+#         og_calib = calib[idx].unsqueeze(0) #
+#         opp_calib     = torch.Tensor(np.matmul(intrinsic, extrinsic)).float().to(device) # (4,4)
+#         opp_calib = opp_calib.unsqueeze(0)
+#         pdb.set_trace()
+#         new_calib = torch.cat([og_calib, opp_calib], dim=0) # (1,4,4), (1,4,4)
+#         calib_list.append(new_calib)
+
+#     return torch.stack(calib_list   , dim=0)    
 
 def reshape_sample_tensor(sample_tensor, num_views):
     if num_views == 1:
@@ -333,28 +419,19 @@ def gen_mesh_color_iccv(opt, netG, netC, cuda, data, save_path, use_octree=True,
 
     image_tensor = data['img'].to(device=cuda)   # (num_views, 3, 512, 512)
     calib_tensor = data['calib'].to(device=cuda) # (num_views, 4, 4)
+    extrinsic_tensor = data['extrinsic'].to(device=cuda) # (num_views, 4, 4)
     deepVoxels_tensor = torch.zeros([1], dtype=torch.int32).to(device=cuda) # small dummy tensors
     if opt.deepVoxels_fusion != None: deepVoxels_tensor = data["deepVoxels"].to(device=cuda)[None,:] # (B=1,C=8,D=32,H=48,W=32), np.float32, all >= 0.
 
     # use hour-glass networks to extract image features
     netG.filter(image_tensor)
-    if opt.use_pix2pix:
-        with torch.no_grad():
-            netC.image_back = net_pix2pixHD.inference(image_tensor, torch.Tensor(0), torch.Tensor(0))
-        back_image_path = save_path.replace(".obj", "_synthesized_back.png")
-        # print("Saving back image:", back_image_path)
-        reshaped_back_image = netC.image_back.view(netC.image_back.shape[0], -1, netC.image_back.shape[-3], netC.image_back.shape[-2], netC.image_back.shape[-1]) # (B==2, num_views, C, W, H)
-        back_img_BGR = ((np.transpose(reshaped_back_image[0,0].detach().cpu().numpy(), (1, 2, 0)) * 0.5 + 0.5)*255.).astype(np.uint8)[:,:,::-1] # RGB to BGR, (512,512,3), [0, 255]
-        cv2.imwrite(back_image_path, back_img_BGR)          # cv2 save BGR-array into proper-color.png
-    netC.filter(image_tensor)
-    netC.attach(netG.get_im_feat())
+    im_feat = netG.get_im_feat()
 
     # the volume of query space
     b_min = data['b_min']
     b_max = data['b_max']
 
     try:
-
         # ----- save the single-view/multi-view input image(s) of this data point -----
         
         save_img_path = save_path[:-4] + '.png'
@@ -371,12 +448,67 @@ def gen_mesh_color_iccv(opt, netG, netC, cuda, data, save_path, use_octree=True,
         # faces: (N, 3)
         print("Reconstructing mesh...")
         verts, faces, _, _ = reconstruction_iccv(netG, cuda, calib_tensor, opt.resolution_x, opt.resolution_y, opt.resolution_z, b_min, b_max, use_octree=use_octree, deepVoxels=deepVoxels_tensor)
-        
+
+        if opt.use_pix2pix:
+            with torch.no_grad():
+                # back_image_tensor = net_pix2pixHD.inference(image_tensor, torch.Tensor(0), torch.Tensor(0))
+                # netG.filter(back_image_tensor)
+                # im_feat_back = netG.get_im_feat()
+
+                # im_feat_front = im_feat.unsqueeze(1)
+                # im_feat_back = im_feat_back.unsqueeze(1)
+                # im_feat = torch.cat([im_feat_front, im_feat_back], 0)
+                # im_feat = im_feat.view(
+                #     im_feat.shape[0] * im_feat.shape[1],
+                #     im_feat.shape[2],
+                #     im_feat.shape[3],
+                #     im_feat.shape[4]
+                # )
+
+                # image_tensor = image_tensor.unsqueeze(1) # transform into multi-view settings
+                # back_image_tensor = back_image_tensor.unsqueeze(1) # transform into multi-view settings
+                # image_tensor = torch.cat([image_tensor, back_image_tensor], 1) # concat them to (B, 2, 3, 512, 512)
+
+                # extrinsic_tensor = extrinsic_tensor.unsqueeze(0)
+                # calib_tensor = calc_opp_calib(calib_tensor, extrinsic_tensor, cuda) # (B, 2, 4, 4)
+                # image_tensor, calib_tensor = reshape_multiview_tensors(image_tensor, calib_tensor) # transform into (B*2, 3, 512, 512) and (B*2, 4, 4)
+                # pdb.set_trace()
+
+                back_image_tensor = net_pix2pixHD.inference(image_tensor, torch.Tensor(0), torch.Tensor(0))
+                back_image_tensor = torch.flip(back_image_tensor, (3,))
+
+                image_tensor = image_tensor.unsqueeze(1) # transform into multi-view settings
+                back_image_tensor = back_image_tensor.unsqueeze(1) # transform into multi-view settings
+                image_tensor = torch.cat([image_tensor, back_image_tensor], 1) # concat them to (B, 2, 3, 512, 512)
+                extrinsic_tensor = extrinsic_tensor.unsqueeze(0)
+                calib_tensor = calc_opp_calib(calib_tensor, extrinsic_tensor, cuda) # (B, 2, 4, 4)
+
+                image_tensor, calib_tensor = reshape_multiview_tensors(image_tensor, calib_tensor) # transform into (B*2, 3, 512, 512) and (B*2, 4, 4)
+
+                netG.filter(image_tensor)
+                im_feat = netG.get_im_feat()
+            
+            # pdb.set_trace()
+
+            back_image_path = save_path.replace(".obj", "_synthesized_back.png")
+            # print("Saving back image:", back_image_path)
+
+            # for debugging purpose
+            reshaped_back_image = back_image_tensor.view(back_image_tensor.shape[0], -1, back_image_tensor.shape[-3], back_image_tensor.shape[-2], back_image_tensor.shape[-1]) # (B==2, num_views, C, W, H)
+            back_img_BGR = ((np.transpose(reshaped_back_image[0,0].detach().cpu().numpy(), (1, 2, 0)) * 0.5 + 0.5)*255.).astype(np.uint8)[:,:,::-1] # RGB to BGR, (512,512,3), [0, 255]
+            cv2.imwrite(back_image_path, back_img_BGR)          # cv2 save BGR-array into proper-color.png
+                    
+        netC.filter(image_tensor)
+        netC.attach(im_feat)
         # Now Getting colors
         verts_tensor = torch.from_numpy(verts.T).unsqueeze(0).to(device=cuda).float() # (1,         3, N)
-        verts_tensor = reshape_sample_tensor(verts_tensor, opt.num_views)             # (num_views, 3, N)
+        if opt.use_pix2pix:
+            verts_tensor = reshape_sample_tensor(verts_tensor, 2)             # (num_views, 3, N)
+        else:
+            verts_tensor = reshape_sample_tensor(verts_tensor, opt.num_views)             # (num_views, 3, N)
         color = np.zeros(verts.shape) # (N, 3)
         interval = 10000
+
         for i in range(len(color) // interval):
             left = i * interval
             right = i * interval + interval
@@ -385,6 +517,7 @@ def gen_mesh_color_iccv(opt, netG, netC, cuda, data, save_path, use_octree=True,
             netC.query(verts_tensor[:, :, left:right], calib_tensor)
             rgb = netC.get_preds()[0].detach().cpu().numpy() * 0.5 + 0.5 # RGB (3, interval), float 0. ~ 1.
             color[left:right] = rgb.T # RGB (interval, 3), float 0. ~ 1.
+            # pdb.set_trace()
         save_obj_mesh_with_color(save_path, verts, faces, color)
 
     except Exception as e:
@@ -603,15 +736,54 @@ def calc_error_color(opt, netG, netC, cuda, dataset, num_tests, net_pix2pixHD=No
             if opt.num_views > 1:
                 color_sample_tensor = reshape_sample_tensor(color_sample_tensor, opt.num_views)
             rgb_tensor          = data['rgbs'].to(device=cuda).unsqueeze(0)
+            extrinsic           = data['extrinsic'].to(device=cuda).unsqueeze(0)
+
+            netG.filter(image_tensor)
+            im_feat = netG.get_im_feat()
 
             back_image_tensor = None
             if opt.use_pix2pix:
                 with torch.no_grad():
-                    back_image_tensor = net_pix2pixHD.inference(image_tensor, torch.Tensor(0), torch.Tensor(0))
+                    color_sample_tensor = reshape_sample_tensor(color_sample_tensor, 2) # transform into (B*2, 3, 8000)
+
+                    with torch.no_grad():
+                        # back_image_tensor = net_pix2pixHD.inference(image_tensor, torch.Tensor(0), torch.Tensor(0))
+                        # netG.filter(back_image_tensor)
+                        # im_feat_back = netG.get_im_feat()
+                        # netG.im_feat = im_feat
+
+                        # im_feat_front = im_feat.unsqueeze(1)
+                        # im_feat_back = im_feat_back.unsqueeze(1)
+                        # im_feat = torch.cat([im_feat_front, im_feat_back], 1)
+                        # im_feat = im_feat.view(
+                        #     im_feat.shape[0] * im_feat.shape[1],
+                        #     im_feat.shape[2],
+                        #     im_feat.shape[3],
+                        #     im_feat.shape[4]
+                        # )
+
+                        # image_tensor = image_tensor.unsqueeze(1) # transform into multi-view settings
+                        # back_image_tensor = back_image_tensor.unsqueeze(1) # transform into multi-view settings
+                        # image_tensor = torch.cat([image_tensor, back_image_tensor], 1) # concat them to (B, 2, 3, 512, 512)
+                        # calib_tensor = calc_opp_calib(calib_tensor, extrinsic, cuda) # (B, 2, 4, 4)
+
+                        # image_tensor, calib_tensor = reshape_multiview_tensors(image_tensor, calib_tensor) # transform into (B*2, 3, 512, 512) and (B*2, 4, 4)
+
+                        back_image_tensor = net_pix2pixHD.inference(image_tensor, torch.Tensor(0), torch.Tensor(0))
+                        back_image_tensor = torch.flip(back_image_tensor, (3,))
+
+                        image_tensor = image_tensor.unsqueeze(1) # transform into multi-view settings
+                        back_image_tensor = back_image_tensor.unsqueeze(1) # transform into multi-view settings
+                        image_tensor = torch.cat([image_tensor, back_image_tensor], 1) # concat them to (B, 2, 3, 512, 512)
+                        calib_tensor = calc_opp_calib(calib_tensor, extrinsic, cuda) # (B, 2, 4, 4)
+
+                        image_tensor, calib_tensor = reshape_multiview_tensors(image_tensor, calib_tensor) # transform into (B*2, 3, 512, 512) and (B*2, 4, 4)
+
+                        netG.filter(image_tensor)
+                        im_feat = netG.get_im_feat()
 
             # forward pass
-            netG.filter(image_tensor)
-            _, errorC = netC.forward(image_tensor, netG.get_im_feat(), color_sample_tensor, calib_tensor, labels=rgb_tensor, back_images=back_image_tensor)
+            _, errorC = netC.forward(image_tensor, im_feat, color_sample_tensor, calib_tensor, labels=rgb_tensor)
 
             # print('{0}/{1} | Error inout: {2:06f} | Error color: {3:06f}'
             #       .format(idx, num_tests, errorG.item(), errorC.item()))

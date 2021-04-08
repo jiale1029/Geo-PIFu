@@ -6,7 +6,7 @@ from skimage import measure
 import pdb
 
 
-def reconstruction_iccv(net, cuda, calib_tensor, resolution_x, resolution_y, resolution_z, b_min, b_max, use_octree=False, num_samples=610000, transform=None, deepVoxels=None):
+def reconstruction_iccv(net, cuda, calib_tensor, resolution_x, resolution_y, resolution_z, b_min, b_max, use_octree=False, num_samples=560000, transform=None, deepVoxels=None):
     '''
     Reconstruct meshes from sdf predicted by the network.
     :param net: a BasePixImpNet object. call image filter beforehead.
@@ -30,8 +30,10 @@ def reconstruction_iccv(net, cuda, calib_tensor, resolution_x, resolution_y, res
         points  = np.expand_dims(points, axis=0)                   # (1,         3, num_samples)
         points  = np.repeat(points, net.num_views, axis=0)         # (num_views, 3, num_samples)
         samples = torch.from_numpy(points).to(device=cuda).float() # (num_views, 3, num_samples))
+        
         net.query(points=samples, calibs=calib_tensor, deepVoxels=deepVoxels) # calib_tensor is (num_views, 4, 4)
         pred = net.get_preds()[0][0]                               # (num_samples,)
+        # print("got the prediction")
         return pred.detach().cpu().numpy()   
 
     # Then we evaluate the grid, use_octree default: True

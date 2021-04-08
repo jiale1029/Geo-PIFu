@@ -1,3 +1,4 @@
+import math
 from torch.utils.data import Dataset
 import numpy as np
 import os
@@ -219,10 +220,19 @@ class TrainDatasetICCV(Dataset):
         """
 
         rotAngByViews = [0, -90., -180., -270.]
+
         angle = np.radians(rotAngByViews[view_id])
         ry = np.array([ [ np.cos(angle), 0., np.sin(angle)],
                         [            0., 1.,            0.],
                         [-np.sin(angle), 0., np.cos(angle)] ]) # (3,3)
+
+        # sy = math.sqrt(ry[0,0] * ry[0,0] +  ry[1,0] * ry[1,0])
+        # singular = sy < 1e-6
+
+        # y = math.atan2(-ry[2,0], sy)
+        # print("Original:", rotAngByViews[view_id])
+        # print("Converting back: ", y*180/math.pi)
+
         ry = np.transpose(ry)
 
         return ry

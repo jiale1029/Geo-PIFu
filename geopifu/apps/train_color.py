@@ -158,6 +158,7 @@ def train(opt, visualCheck_0=False, visualCheck_1=False):
             calib_tensor            = train_data['calib'].to(device=cuda)   # (B==2, num_views, 4, 4) calibration matrix
             color_sample_tensor     = train_data['color_samples'].to(device=cuda) # (B==2, 3, n_in + n_out), float XYZ coords are inside the 3d-volume of [self.B_MIN, self.B_MAX]
             rgb_tensor              = train_data['rgbs'].to(device=cuda)
+            extrinsic               = train_data['extrinsic'].to(device=cuda)
 
             # sample_tensor     = train_data['samples'].to(device=cuda) # (B==2, 3, n_in + n_out), float XYZ coords are inside the 3d-volume of [self.B_MIN, self.B_MAX]
             # label_tensor      = train_data['labels'].to(device=cuda)  # (B==2, 1, n_in + n_out), float 1.0-inside, 0.0-outside
@@ -194,15 +195,66 @@ def train(opt, visualCheck_0=False, visualCheck_1=False):
             # the last layer feature is then passed to netC
             with torch.no_grad():
                 netG.filter(image_tensor)
+                im_feat = netG.get_im_feat()
 
             back_image_tensor = None
             if opt.use_pix2pix:
+                color_sample_tensor = reshape_sample_tensor(color_sample_tensor, 2) # transform into (B*2, 3, 8000)
+
                 with torch.no_grad():
+                    # back_image_tensor = net_pix2pixHD.inference(image_tensor, torch.Tensor(0), torch.Tensor(0))
+                    # netG.filter(back_image_tensor)
+                    # im_feat_back = netG.get_im_feat()
+                    # netG.im_feat = im_feat # recover the im_feat back
+
+                    # im_feat_front = im_feat.unsqueeze(1)
+                    # im_feat_back = im_feat_back.unsqueeze(1)
+                    # im_feat = torch.cat([im_feat_front, im_feat_back], 1)
+                    # im_feat = im_feat.view(
+                    #     im_feat.shape[0] * im_feat.shape[1],
+                    #     im_feat.shape[2],
+                    #     im_feat.shape[3],
+                    #     im_feat.shape[4]
+                    # )
+
+                    # image_tensor = image_tensor.unsqueeze(1) # transform into multi-view settings
+                    # back_image_tensor = back_image_tensor.unsqueeze(1) # transform into multi-view settings
+                    # image_tensor = torch.cat([image_tensor, back_image_tensor], 1) # concat them to (B, 2, 3, 512, 512)
+                    # calib_tensor = calc_opp_calib(calib_tensor, extrinsic, cuda) # (B, 2, 4, 4)
+
+                    # image_tensor, calib_tensor = reshape_multiview_tensors(image_tensor, calib_tensor) # transform into (B*2, 3, 512, 512) and (B*2, 4, 4)
+
                     back_image_tensor = net_pix2pixHD.inference(image_tensor, torch.Tensor(0), torch.Tensor(0))
+                    # save_path = './sample_back.png'
+                    # back_image_tensor_reshaped = back_image_tensor.view(back_image_tensor.shape[0], -1, back_image_tensor.shape[-3], back_image_tensor.shape[-2], back_image_tensor.shape[-1]) # (B==2, num_views, C, W, H)
+                    # back_img_BGR = ((np.transpose(back_image_tensor_reshaped[0,0].detach().cpu().numpy(), (1, 2, 0)) * 0.5 + 0.5)*255.).astype(np.uint8)[:,:,::-1] # RGB to BGR, (512,512,3), [0, 255]
+                    # cv2.imwrite(save_path, back_img_BGR)          # cv2 save BGR-array into proper-color.png
+
+                    back_image_tensor = torch.flip(back_image_tensor, (3,))
+                    # save_path = './sample_back_flipped.png'
+                    # back_image_tensor_reshaped = back_image_tensor.view(back_image_tensor.shape[0], -1, back_image_tensor.shape[-3], back_image_tensor.shape[-2], back_image_tensor.shape[-1]) # (B==2, num_views, C, W, H)
+                    # back_img_BGR = ((np.transpose(back_image_tensor_reshaped[0,0].detach().cpu().numpy(), (1, 2, 0)) * 0.5 + 0.5)*255.).astype(np.uint8)[:,:,::-1] # RGB to BGR, (512,512,3), [0, 255]
+                    # cv2.imwrite(save_path, back_img_BGR)          # cv2 save BGR-array into proper-color.png
+
+                    image_tensor = image_tensor.unsqueeze(1) # transform into multi-view settings
+                    back_image_tensor = back_image_tensor.unsqueeze(1) # transform into multi-view settings
+                    image_tensor = torch.cat([image_tensor, back_image_tensor], 1) # concat them to (B, 2, 3, 512, 512)
+                    calib_tensor = calc_opp_calib(calib_tensor, extrinsic, cuda) # (B, 2, 4, 4)
+
+                    image_tensor, calib_tensor = reshape_multiview_tensors(image_tensor, calib_tensor) # transform into (B*2, 3, 512, 512) and (B*2, 4, 4)
+
+                    # save_path = './image.png'
+                    # image_tensor_reshaped = image_tensor.view(image_tensor.shape[0], -1, image_tensor.shape[-3], image_tensor.shape[-2], image_tensor.shape[-1]) # (B==2, num_views, C, W, H)
+                    # img_BGR = ((np.transpose(image_tensor_reshaped[0,0].detach().cpu().numpy(), (1, 2, 0)) * 0.5 + 0.5)*255.).astype(np.uint8)[:,:,::-1] # RGB to BGR, (512,512,3), [0, 255]
+                    # cv2.imwrite(save_path, img_BGR)          # cv2 save BGR-array into proper-color.png
+
+                    netG.filter(image_tensor)
+                    im_feat = netG.get_im_feat()
+
                 
             # network forward pass
             res, error = netC.forward(
-                images=image_tensor, im_feat=netG.get_im_feat(), points=color_sample_tensor, calibs=calib_tensor, labels=rgb_tensor, back_images=back_image_tensor
+                images=image_tensor, im_feat=im_feat, points=color_sample_tensor, calibs=calib_tensor, labels=rgb_tensor
             ) # (B, 1, 5000), R
 
             # compute gradients and update weights
@@ -247,10 +299,11 @@ def train(opt, visualCheck_0=False, visualCheck_1=False):
                 img_BGR = ((np.transpose(image_tensor_reshaped[0,0].detach().cpu().numpy(), (1, 2, 0)) * 0.5 + 0.5)*255.).astype(np.uint8)[:,:,::-1] # RGB to BGR, (512,512,3), [0, 255]
                 cv2.imwrite(save_path, img_BGR)          # cv2 save BGR-array into proper-color.png
 
-                save_path = '%s/%s/pred_back_%d_%d.png' % (opt.results_path, opt.name, epoch, train_idx)
-                back_image_tensor_reshaped = back_image_tensor.view(back_image_tensor.shape[0], -1, back_image_tensor.shape[-3], back_image_tensor.shape[-2], back_image_tensor.shape[-1]) # (B==2, num_views, C, W, H)
-                back_img_BGR = ((np.transpose(back_image_tensor_reshaped[0,0].detach().cpu().numpy(), (1, 2, 0)) * 0.5 + 0.5)*255.).astype(np.uint8)[:,:,::-1] # RGB to BGR, (512,512,3), [0, 255]
-                cv2.imwrite(save_path, back_img_BGR)          # cv2 save BGR-array into proper-color.png
+                if opt.use_pix2pix:
+                    save_path = '%s/%s/pred_back_%d_%d.png' % (opt.results_path, opt.name, epoch, train_idx)
+                    back_image_tensor_reshaped = back_image_tensor.view(back_image_tensor.shape[0], -1, back_image_tensor.shape[-3], back_image_tensor.shape[-2], back_image_tensor.shape[-1]) # (B==2, num_views, C, W, H)
+                    back_img_BGR = ((np.transpose(back_image_tensor_reshaped[0,0].detach().cpu().numpy(), (1, 2, 0)) * 0.5 + 0.5)*255.).astype(np.uint8)[:,:,::-1] # RGB to BGR, (512,512,3), [0, 255]
+                    cv2.imwrite(save_path, back_img_BGR)          # cv2 save BGR-array into proper-color.png
 
             # for recording dataloading time
             iter_data_time = time.time()
@@ -267,7 +320,7 @@ def train(opt, visualCheck_0=False, visualCheck_1=False):
 
             # save metrics
             metrics_path = os.path.join(opt.results_path, opt.name, 'metrics.txt')
-            if epoch == start_epoch:
+            if epoch == start_epoch and not os.path.exists(metrics_path):
                 with open(metrics_path, 'w') as outfile:
                     outfile.write("Metrics\n\n")
 

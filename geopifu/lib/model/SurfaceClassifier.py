@@ -191,6 +191,7 @@ class SurfaceClassifier(nn.Module):
                 y = F.leaky_relu(y)
 
             if self.num_views > 1 and i == len(self.filters) // 2:
+                print("Mean pooling for views...")
                 y = y.view(
                     -1, self.num_views, y.shape[1], y.shape[2]
                 ).mean(dim=1)
