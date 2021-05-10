@@ -328,6 +328,7 @@ class render_mesh(object):
         self.meshPath = meshPath
         self.newMeshToRead = True
         self.angle = 0
+        self.saveDir = args.saveDir
 
         self.rn = ColoredRenderer()
 
@@ -356,13 +357,15 @@ class render_mesh(object):
         self.set_sky_lighting_directions()
 
         #----- FRONT view rendering -----
+        cmd = "source activate geopifu && ffmpeg -framerate 60 -i " + "%s/img_" %(self.saveDir) + "%04d.png -vcodec libx264 -y -pix_fmt yuv420p -refs 16 " + "%s/output.mp4" %self.saveDir
+        print(cmd)
         self.start_rendering(accuRotDegree=0, info="FRONT", dataPrefix=None, meshPath=meshPath)
         from tqdm import tqdm
         for lsangle in tqdm(range(359)):
             self.angle += 1
             self.start_rendering(accuRotDegree=-1, info="FRONT", dataPrefix=None, meshPath=meshPath)
 
-        os.system("ffmpeg -framerate 60 -i img_%04d.png -vcodec libx264 -y -pix_fmt yuv420p -refs 16 output.mp4")
+        os.system(cmd)
 
     def set_sky_lighting_directions(self):
 
@@ -616,7 +619,7 @@ class render_mesh(object):
         cv.imwrite("%s/gtImage/%s"%(self.saveDir, mesh_rendered_name), (image_padded).astype(np.uint8)[:,:,::-1])
 
     def save_rendering_for_turntable(self):
-        dirName = self.create_dir(self.saveDir+"/renderedImages")
+        dirName = self.create_dir(self.saveDir)
         # print("saving to %s" %("%s/%s"%(self.saveDir, mesh_rendered_name)))
 
         image_padded = np.ones((max(self.rgbImage.shape), max(self.rgbImage.shape), 3), np.uint8) * 255 # (1536, 1536, 3)
@@ -626,7 +629,7 @@ class render_mesh(object):
         # resize to (512, 512, 3), np.uint8
         image_padded = cv.resize(image_padded, (512, 512))
 
-        cv.imwrite("%s/renderedImages/img_%04d.png"%(self.saveDir, self.angle), (image_padded).astype(np.uint8)[:,:,::-1])
+        cv.imwrite("%s/img_%04d.png"%(self.saveDir, self.angle), (image_padded).astype(np.uint8)[:,:,::-1])
         
     def start_rendering(self, accuRotDegree, info, dataPrefix, meshPath):
 
